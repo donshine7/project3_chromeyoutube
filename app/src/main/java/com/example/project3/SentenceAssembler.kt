@@ -18,9 +18,7 @@ class SentenceAssembler {
         for (word in words) {
             if (current.isNotEmpty()) {
                 val prev = current.last()
-                val gap = word.start - prev.end
-                val closeByPunctuation = endsSentence(prev.word)
-                if (gap >= 0.9 || closeByPunctuation || current.size >= 40) {
+                if (shouldSplit(current, prev, word)) {
                     emitWords(current)?.let(out::add)
                     current.clear()
                 }
@@ -28,7 +26,7 @@ class SentenceAssembler {
             current.add(word)
         }
         emitWords(current)?.let(out::add)
-        return out
+        return mergeSmallFragments(out)
     }
 
     private fun splitSegments(segments: List<WhisperSegment>): List<SentenceTimestamp> {
@@ -43,6 +41,41 @@ class SentenceAssembler {
         val text = normalizeText(words.joinToString(separator = "") { it.word })
         if (text.isBlank()) return null
         return SentenceTimestamp(words.first().start, words.last().end, text)
+    }
+
+    private fun shouldSplit(current: List<WhisperWord>, prev: WhisperWord, next: WhisperWord): Boolean {
+        val gap = next.start - prev.end
+        val span = current.last().end - current.first().start
+        val punctuationSplit = endsSentence(prev.word) && current.size >= 6
+        val silenceSplit = gap >= 1.4 && current.size >= 5
+        val veryLongSilenceSplit = gap >= 2.2
+        val tooLongSentence = current.size >= 55 || span >= 18.0
+        return punctuationSplit || silenceSplit || veryLongSilenceSplit || tooLongSentence
+    }
+
+    private fun mergeSmallFragments(items: List<SentenceTimestamp>): List<SentenceTimestamp> {
+        if (items.size <= 1) return items
+        val merged = mutableListOf<SentenceTimestamp>()
+        var i = 0
+        while (i < items.size) {
+            val cur = items[i]
+            val dur = cur.endSec - cur.startSec
+            val isTiny = cur.text.length < 20 || dur < 1.2
+            if (isTiny && i + 1 < items.size) {
+                val next = items[i + 1]
+                val joinedText = normalizeText("${cur.text} ${next.text}")
+                merged += SentenceTimestamp(
+                    startSec = cur.startSec,
+                    endSec = next.endSec,
+                    text = joinedText
+                )
+                i += 2
+                continue
+            }
+            merged += cur
+            i += 1
+        }
+        return merged
     }
 
     private fun keepIfRelevant(

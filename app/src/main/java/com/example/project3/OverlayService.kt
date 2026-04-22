@@ -131,7 +131,7 @@ class OverlayService : Service() {
         val resetButton = Button(this).apply {
             text = "Reset"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
-            setOnClickListener { resetCaptureState() }
+            setOnClickListener { resetAllState() }
         }
         val closeButton = Button(this).apply {
             text = "Close"
@@ -634,6 +634,16 @@ class OverlayService : Service() {
         statusTextView?.text = buildCaptureStatus()
         setOutputText("")
         ChromeCaptureStore.clearTransientPlaybackSample(this)
+    }
+
+    private fun resetAllState() {
+        expandedSentenceKey = null
+        if (repeatSession != null) {
+            repeatCancelled = true
+            finalizeRepeat(cancelled = true)
+        }
+        resetCaptureState()
+        refreshSentenceButtons()
     }
 
     private fun setOutputText(text: String) {
