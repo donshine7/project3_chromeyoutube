@@ -7,7 +7,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 class ChromeAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val ev = event ?: return
-        if (!ev.packageName.toString().contains("chrome", ignoreCase = true)) return
+        val packageName = ev.packageName?.toString().orEmpty()
+        if (packageName.isBlank() || !packageName.contains("chrome", ignoreCase = true)) return
 
         extractUrlFromEvent(ev)?.let { url ->
             YoutubeUrlParser.normalizeUrl(url)?.let { normalized ->
