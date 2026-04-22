@@ -66,6 +66,7 @@ class OverlayService : Service() {
     private var repeatCancelled = false
     private var activeSentenceKey: String? = null
     private var expandedSentenceKey: String? = null
+    private var pendingAutoRange: Pair<Int, Int>? = null
 
     private enum class RepeatState { SEEKING, WAITING_FOR_PLAY, PLAYING, RESTARTING, FAILED }
 
@@ -102,6 +103,16 @@ class OverlayService : Service() {
         overlayView?.let { v -> runCatching { windowManager?.removeView(v) } }
         overlayView = null
         super.onDestroy()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val startSec = intent?.getIntExtra(EXTRA_AUTO_START_SEC, -1) ?: -1
+        val endSec = intent?.getIntExtra(EXTRA_AUTO_END_SEC, -1) ?: -1
+        if (startSec >= 0 && endSec > startSec) {
+            pendingAutoRange = startSec to endSec
+            mainHandler.post { maybeRunPendingAutoRange() }
+        }
+        return START_STICKY
     }
 
     private fun showOverlay() {
@@ -212,6 +223,20 @@ class OverlayService : Service() {
         overlayParams = params
         refreshSentenceButtons()
         updateFolderFoldUi()
+        maybeRunPendingAutoRange()
+    }
+
+    private fun maybeRunPendingAutoRange() {
+        val range = pendingAutoRange ?: return
+        if (pipelineRunning) return
+        pendingAutoRange = null
+        val (startSec, endSec) = range
+        waitingEndCapture = false
+        capturedStartSec = startSec
+        capturedEndSec = endSec
+        toggleButton?.text = "Set Start"
+        statusTextView?.text = "Auto STT: ${startSec}s-${endSec}s"
+        runStt(startSec, endSec)
     }
 
     private fun onCaptureToggle() {
@@ -760,6 +785,8 @@ class OverlayService : Service() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        const val EXTRA_AUTO_START_SEC = "extra_auto_start_sec"
+        const val EXTRA_AUTO_END_SEC = "extra_auto_end_sec"
         private const val FONT_SCALE = 0.8f
         private const val BUTTON_TEXT_SP = 11f
         private const val CHANNEL_ID = "project3_overlay_channel"

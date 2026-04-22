@@ -118,6 +118,18 @@ class MainActivity : AppCompatActivity() {
             updateStatus(getString(R.string.status_stage_failed, "YouTube URL is missing"))
             return
         }
+        val startSec = parseTimeToSeconds(startInput.text?.toString()) ?: run {
+            updateStatus(getString(R.string.status_stage_failed, "Invalid start time"))
+            return
+        }
+        val endSec = parseTimeToSeconds(endInput.text?.toString()) ?: run {
+            updateStatus(getString(R.string.status_stage_failed, "Invalid end time"))
+            return
+        }
+        if (endSec <= startSec) {
+            updateStatus(getString(R.string.status_stage_failed, "End time must be greater than start time"))
+            return
+        }
         val apiKey = apiKeyInput.text?.toString().orEmpty().trim()
         if (apiKey.isBlank()) {
             updateStatus(getString(R.string.status_stage_failed, "OpenAI API key is required"))
@@ -128,12 +140,25 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_SELECTED_URL, sourceUrl)
             .putString(KEY_LAST_URL, sourceUrl)
             .apply()
-        statusText.text = "Overlay pipeline ready. Tap Set Start / Set End in overlay."
-        startOverlayMode()
+        statusText.text = "Overlay pipeline starting..."
+        startOverlayMode(startSec = startSec, endSec = endSec)
     }
 
     private fun updateStatus(text: String) {
         runOnUiThread { statusText.text = text }
+    }
+
+    private fun parseTimeToSeconds(raw: String?): Int? {
+        val value = raw?.trim().orEmpty()
+        if (value.isBlank()) return null
+        val parts = value.split(":").map { it.trim() }
+        val nums = parts.map { it.toIntOrNull() ?: return null }
+        return when (nums.size) {
+            1 -> nums[0]
+            2 -> nums[0] * 60 + nums[1]
+            3 -> nums[0] * 3600 + nums[1] * 60 + nums[2]
+            else -> null
+        }
     }
 
     companion object {
@@ -154,7 +179,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startOverlayMode() {
+    private fun startOverlayMode(startSec: Int? = null, endSec: Int? = null) {
         if (!isAccessibilityEnabled()) {
             statusText.text = getString(R.string.status_waiting_accessibility)
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -179,8 +204,17 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_LAST_URL, selectedUrl)
             .apply()
 
-        val overlayIntent = Intent(this, OverlayService::class.java)
+        val overlayIntent = Intent(this, OverlayService::class.java).apply {
+            if (startSec != null && endSec != null) {
+                putExtra(OverlayService.EXTRA_AUTO_START_SEC, startSec)
+                putExtra(OverlayService.EXTRA_AUTO_END_SEC, endSec)
+            }
+        }
         ContextCompat.startForegroundService(this, overlayIntent)
-        statusText.text = getString(R.string.status_overlay_started)
+        statusText.text = if (startSec != null && endSec != null) {
+            "Overlay started. Auto STT queued: ${startSec}s-${endSec}s"
+        } else {
+            getString(R.string.status_overlay_started)
+        }
     }
 }

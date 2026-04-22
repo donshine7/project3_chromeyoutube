@@ -30,10 +30,31 @@ class SentenceAssembler {
     }
 
     private fun splitSegments(segments: List<WhisperSegment>): List<SentenceTimestamp> {
-        return segments.mapNotNull { seg ->
+        val raw = segments.mapNotNull { seg ->
             val text = normalizeText(seg.text)
             if (text.isBlank()) null else SentenceTimestamp(seg.start, seg.end, text)
         }
+        if (raw.size <= 1) return raw
+
+        val merged = mutableListOf<SentenceTimestamp>()
+        var current = raw.first()
+        for (i in 1 until raw.size) {
+            val next = raw[i]
+            val gap = next.startSec - current.endSec
+            val shouldMerge = !endsSentence(current.text) && gap <= 1.2
+            if (shouldMerge) {
+                current = SentenceTimestamp(
+                    startSec = current.startSec,
+                    endSec = next.endSec,
+                    text = normalizeText("${current.text} ${next.text}")
+                )
+            } else {
+                merged += current
+                current = next
+            }
+        }
+        merged += current
+        return mergeSmallFragments(merged)
     }
 
     private fun emitWords(words: List<WhisperWord>): SentenceTimestamp? {
