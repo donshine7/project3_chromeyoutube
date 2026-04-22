@@ -29,6 +29,20 @@
             android:layout_marginTop="8dp"
             android:text="@string/action_open_accessibility_settings" />
 
+        <Button
+            android:id="@+id/openMediaCaptureButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/action_open_notification_listener_settings" />
+
+        <Button
+            android:id="@+id/startOverlayButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/action_start_overlay_mode" />
+
         <EditText
             android:id="@+id/startInput"
             android:layout_width="match_parent"

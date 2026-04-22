@@ -10,11 +10,16 @@ class AudioSegmentDownloader(private val context: Context) {
         val outputDir = File(context.getExternalFilesDir(null), "segments").apply { mkdirs() }
         val outFile = File(outputDir, "seg-${System.currentTimeMillis()}-${startSec}s-${endSec}s.webm")
         val localIn = escapeForCli(localSourcePath)
+        val durationSec = endSec - startSec
+        val coarseSeekSec = (startSec - 3).coerceAtLeast(0)
+        val fineSeekSec = startSec - coarseSeekSec
 
-        // Accuracy-first: seek after input and re-encode.
+        // Hybrid seek:
+        // 1) coarse seek before input to avoid decoding from 0 for late timestamps
+        // 2) fine seek after input to preserve cut accuracy
         val cmd = buildString {
             append("-y -hide_banner -loglevel error -nostdin ")
-            append("-i \"$localIn\" -ss $startSec -to $endSec -vn -c:a libopus -b:a 64k -f webm ")
+            append("-ss $coarseSeekSec -i \"$localIn\" -ss $fineSeekSec -t $durationSec -vn -c:a libopus -b:a 64k -f webm ")
             append("-af \"asetpts=PTS-STARTPTS\" \"${escapeForCli(outFile.absolutePath)}\"")
         }
         val session = FFmpegKit.execute(cmd)

@@ -1,6 +1,7 @@
 package com.example.project3
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -11,6 +12,7 @@ import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
@@ -91,7 +93,16 @@ class MainActivity : AppCompatActivity() {
     private fun refreshChromeConnection() {
         val observed = ChromeCaptureStore.getObservedUrl(this)
         if (observed != null) {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(KEY_SELECTED_URL, observed)
+                .putString(KEY_LAST_URL, observed)
+                .apply()
             urlText.text = observed
+            statusText.text = if (isNotificationListenerEnabled()) {
+                getString(R.string.status_idle)
+            } else {
+                getString(R.string.status_waiting_media_listener)
+            }
             return
         }
         if (!isAccessibilityEnabled()) {
@@ -105,11 +116,24 @@ class MainActivity : AppCompatActivity() {
         return !enabled.isNullOrBlank() && enabled.contains(expected, ignoreCase = true)
     }
 
+    private fun isNotificationListenerEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        val expected = "$packageName/${ChromeNotificationListenerService::class.java.name}"
+        if (enabled.isNullOrBlank()) return false
+        return enabled.split(":").any {
+            it.equals(expected, ignoreCase = true) || it.startsWith("$packageName/", ignoreCase = true)
+        }
+    }
+
     private fun startDownloadFlow() {
         val sourceUrl = YoutubeUrlParser.normalizeUrl(urlText.text?.toString()) ?: run {
             updateStatus(getString(R.string.status_stage_failed, "YouTube URL is missing"))
             return
         }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(KEY_SELECTED_URL, sourceUrl)
+            .putString(KEY_LAST_URL, sourceUrl)
+            .apply()
         val startSec = parseTimeToSeconds(startInput.text?.toString()) ?: run {
             updateStatus(getString(R.string.status_stage_failed, "Invalid start time"))
             return
@@ -221,6 +245,48 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val PREFS_NAME = "project3_main"
         private const val KEY_API_KEY = "openai_api_key"
+        private const val KEY_LAST_URL = "last_url"
+        private const val KEY_SELECTED_URL = "selected_url"
         private const val CHROME_POLL_INTERVAL_MS = 1500L
+    }
+
+    override fun onStart() {
+        super.onStart()
+        findViewById<Button>(R.id.openMediaCaptureButton).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+        findViewById<Button>(R.id.startOverlayButton).setOnClickListener {
+            startOverlayMode()
+        }
+    }
+
+    private fun startOverlayMode() {
+        if (!isAccessibilityEnabled()) {
+            statusText.text = getString(R.string.status_waiting_accessibility)
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            return
+        }
+        if (!isNotificationListenerEnabled()) {
+            statusText.text = getString(R.string.status_waiting_media_listener)
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            return
+        }
+        if (!Settings.canDrawOverlays(this)) {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            return
+        }
+
+        val selectedUrl = YoutubeUrlParser.normalizeUrl(urlText.text?.toString())
+            ?: ChromeCaptureStore.getObservedUrl(this)
+        val apiKey = apiKeyInput.text?.toString().orEmpty().trim()
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(KEY_API_KEY, apiKey)
+            .putString(KEY_SELECTED_URL, selectedUrl)
+            .putString(KEY_LAST_URL, selectedUrl)
+            .apply()
+
+        val overlayIntent = Intent(this, OverlayService::class.java)
+        ContextCompat.startForegroundService(this, overlayIntent)
+        statusText.text = getString(R.string.status_overlay_started)
     }
 }

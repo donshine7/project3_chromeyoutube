@@ -8,9 +8,13 @@
     <string name="hint_end_time">End (e.g. 08:00 or 00:08:00)</string>
     <string name="hint_api_key">OpenAI API Key (sk-...)</string>
     <string name="action_open_accessibility_settings">Open Accessibility Settings</string>
+    <string name="action_open_notification_listener_settings">Open Notification Listener Settings</string>
+    <string name="action_start_overlay_mode">Start Overlay Mode</string>
     <string name="action_download_and_stt">Download segment and run STT</string>
     <string name="status_idle">Idle</string>
     <string name="status_waiting_accessibility">Accessibility is off. Enable Chrome capture service.</string>
+    <string name="status_waiting_media_listener">Notification listener is off. Enable media capture.</string>
+    <string name="status_overlay_started">Overlay mode started.</string>
     <string name="status_stage_downloading">Downloading full audio with yt-dlp...</string>
     <string name="status_stage_cutting">Cutting requested segment (accuracy mode)...</string>
     <string name="status_stage_stt_uploading">Uploading segment to Whisper...</string>
