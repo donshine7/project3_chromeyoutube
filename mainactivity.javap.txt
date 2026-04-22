@@ -1,0 +1,1924 @@
+﻿Compiled from "MainActivity.kt"
+public final class com.example.project3.MainActivity extends androidx.appcompat.app.AppCompatActivity {
+  public static final com.example.project3.MainActivity$Companion Companion;
+
+  private final java.lang.String tag;
+
+  private android.widget.TextView urlText;
+
+  private android.widget.TextView statusText;
+
+  private android.widget.Button openAccessibilityButton;
+
+  private android.widget.EditText startInput;
+
+  private android.widget.EditText endInput;
+
+  private android.widget.EditText apiKeyInput;
+
+  private android.widget.Button downloadButton;
+
+  private android.widget.ProgressBar downloadProgress;
+
+  private android.widget.TextView sttResultText;
+
+  private final kotlin.Lazy chromeCaptureStore$delegate;
+
+  private final kotlin.Lazy extractor$delegate;
+
+  private final kotlin.Lazy segmentDownloader$delegate;
+
+  private final kotlin.Lazy whisperApiClient$delegate;
+
+  private final kotlin.Lazy sentenceAssembler$delegate;
+
+  private final kotlin.Lazy prefs$delegate;
+
+  private final android.os.Handler mainHandler;
+
+  private boolean isDownloading;
+
+  private final com.example.project3.MainActivity$chromePoller$1 chromePoller;
+
+  private static final java.lang.String PREFS_NAME;
+
+  private static final java.lang.String KEY_API_KEY;
+
+  public com.example.project3.MainActivity();
+    Code:
+       0: aload_0
+       1: invokespecial #8                  // Method androidx/appcompat/app/AppCompatActivity."<init>":()V
+       4: aload_0
+       5: ldc           #10                 // String MainActivityP3
+       7: putfield      #14                 // Field tag:Ljava/lang/String;
+      10: aload_0
+      11: aload_0
+      12: invokedynamic #34,  0             // InvokeDynamic #0:invoke:(Lcom/example/project3/MainActivity;)Lkotlin/jvm/functions/Function0;
+      17: invokestatic  #40                 // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+      20: putfield      #44                 // Field chromeCaptureStore$delegate:Lkotlin/Lazy;
+      23: aload_0
+      24: aload_0
+      25: invokedynamic #52,  0             // InvokeDynamic #1:invoke:(Lcom/example/project3/MainActivity;)Lkotlin/jvm/functions/Function0;
+      30: invokestatic  #40                 // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+      33: putfield      #55                 // Field extractor$delegate:Lkotlin/Lazy;
+      36: aload_0
+      37: aload_0
+      38: invokedynamic #63,  0             // InvokeDynamic #2:invoke:(Lcom/example/project3/MainActivity;)Lkotlin/jvm/functions/Function0;
+      43: invokestatic  #40                 // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+      46: putfield      #66                 // Field segmentDownloader$delegate:Lkotlin/Lazy;
+      49: aload_0
+      50: invokedynamic #75,  0             // InvokeDynamic #3:invoke:()Lkotlin/jvm/functions/Function0;
+      55: invokestatic  #40                 // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+      58: putfield      #78                 // Field whisperApiClient$delegate:Lkotlin/Lazy;
+      61: aload_0
+      62: invokedynamic #85,  0             // InvokeDynamic #4:invoke:()Lkotlin/jvm/functions/Function0;
+      67: invokestatic  #40                 // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+      70: putfield      #88                 // Field sentenceAssembler$delegate:Lkotlin/Lazy;
+      73: aload_0
+      74: aload_0
+      75: invokedynamic #96,  0             // InvokeDynamic #5:invoke:(Lcom/example/project3/MainActivity;)Lkotlin/jvm/functions/Function0;
+      80: invokestatic  #40                 // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+      83: putfield      #99                 // Field prefs$delegate:Lkotlin/Lazy;
+      86: aload_0
+      87: new           #101                // class android/os/Handler
+      90: dup
+      91: invokestatic  #107                // Method android/os/Looper.getMainLooper:()Landroid/os/Looper;
+      94: invokespecial #110                // Method android/os/Handler."<init>":(Landroid/os/Looper;)V
+      97: putfield      #114                // Field mainHandler:Landroid/os/Handler;
+     100: aload_0
+     101: new           #116                // class com/example/project3/MainActivity$chromePoller$1
+     104: dup
+     105: aload_0
+     106: invokespecial #119                // Method com/example/project3/MainActivity$chromePoller$1."<init>":(Lcom/example/project3/MainActivity;)V
+     109: putfield      #123                // Field chromePoller:Lcom/example/project3/MainActivity$chromePoller$1;
+     112: return
+
+  private final com.example.project3.ChromeCaptureStore getChromeCaptureStore();
+    Code:
+       0: aload_0
+       1: getfield      #44                 // Field chromeCaptureStore$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #131,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #133                // class com/example/project3/ChromeCaptureStore
+      14: areturn
+
+  private final com.example.project3.YoutubeDirectUrlExtractor getExtractor();
+    Code:
+       0: aload_0
+       1: getfield      #55                 // Field extractor$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #131,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #136                // class com/example/project3/YoutubeDirectUrlExtractor
+      14: areturn
+
+  private final com.example.project3.AudioSegmentDownloader getSegmentDownloader();
+    Code:
+       0: aload_0
+       1: getfield      #66                 // Field segmentDownloader$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #131,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #139                // class com/example/project3/AudioSegmentDownloader
+      14: areturn
+
+  private final com.example.project3.WhisperApiClient getWhisperApiClient();
+    Code:
+       0: aload_0
+       1: getfield      #78                 // Field whisperApiClient$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #131,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #142                // class com/example/project3/WhisperApiClient
+      14: areturn
+
+  private final com.example.project3.SentenceAssembler getSentenceAssembler();
+    Code:
+       0: aload_0
+       1: getfield      #88                 // Field sentenceAssembler$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #131,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #145                // class com/example/project3/SentenceAssembler
+      14: areturn
+
+  private final android.content.SharedPreferences getPrefs();
+    Code:
+       0: aload_0
+       1: getfield      #99                 // Field prefs$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #131,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: dup
+      12: ldc           #148                // String getValue(...)
+      14: invokestatic  #154                // Method kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
+      17: checkcast     #156                // class android/content/SharedPreferences
+      20: areturn
+
+  protected void onCreate(android.os.Bundle);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: invokespecial #161                // Method androidx/appcompat/app/AppCompatActivity.onCreate:(Landroid/os/Bundle;)V
+       5: aload_0
+       6: getstatic     #167                // Field com/example/project3/R$layout.activity_main:I
+       9: invokevirtual #171                // Method setContentView:(I)V
+      12: aload_0
+      13: aload_0
+      14: getstatic     #176                // Field com/example/project3/R$id.urlText:I
+      17: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+      20: checkcast     #182                // class android/widget/TextView
+      23: putfield      #185                // Field urlText:Landroid/widget/TextView;
+      26: aload_0
+      27: aload_0
+      28: getstatic     #188                // Field com/example/project3/R$id.statusText:I
+      31: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+      34: checkcast     #182                // class android/widget/TextView
+      37: putfield      #190                // Field statusText:Landroid/widget/TextView;
+      40: aload_0
+      41: aload_0
+      42: getstatic     #193                // Field com/example/project3/R$id.openAccessibilityButton:I
+      45: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+      48: checkcast     #195                // class android/widget/Button
+      51: putfield      #198                // Field openAccessibilityButton:Landroid/widget/Button;
+      54: aload_0
+      55: aload_0
+      56: getstatic     #201                // Field com/example/project3/R$id.startInput:I
+      59: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+      62: checkcast     #203                // class android/widget/EditText
+      65: putfield      #206                // Field startInput:Landroid/widget/EditText;
+      68: aload_0
+      69: aload_0
+      70: getstatic     #209                // Field com/example/project3/R$id.endInput:I
+      73: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+      76: checkcast     #203                // class android/widget/EditText
+      79: putfield      #211                // Field endInput:Landroid/widget/EditText;
+      82: aload_0
+      83: aload_0
+      84: getstatic     #214                // Field com/example/project3/R$id.apiKeyInput:I
+      87: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+      90: checkcast     #203                // class android/widget/EditText
+      93: putfield      #216                // Field apiKeyInput:Landroid/widget/EditText;
+      96: aload_0
+      97: aload_0
+      98: getstatic     #219                // Field com/example/project3/R$id.downloadButton:I
+     101: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+     104: checkcast     #195                // class android/widget/Button
+     107: putfield      #221                // Field downloadButton:Landroid/widget/Button;
+     110: aload_0
+     111: aload_0
+     112: getstatic     #224                // Field com/example/project3/R$id.downloadProgress:I
+     115: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+     118: checkcast     #226                // class android/widget/ProgressBar
+     121: putfield      #229                // Field downloadProgress:Landroid/widget/ProgressBar;
+     124: aload_0
+     125: aload_0
+     126: getstatic     #232                // Field com/example/project3/R$id.sttResultText:I
+     129: invokevirtual #180                // Method findViewById:(I)Landroid/view/View;
+     132: checkcast     #182                // class android/widget/TextView
+     135: putfield      #234                // Field sttResultText:Landroid/widget/TextView;
+     138: aload_0
+     139: getfield      #216                // Field apiKeyInput:Landroid/widget/EditText;
+     142: dup
+     143: ifnonnull     153
+     146: pop
+     147: ldc           #235                // String apiKeyInput
+     149: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     152: aconst_null
+     153: aload_0
+     154: invokespecial #241                // Method getPrefs:()Landroid/content/SharedPreferences;
+     157: ldc           #243                // String openai_api_key
+     159: ldc           #245                // String
+     161: invokeinterface #249,  3          // InterfaceMethod android/content/SharedPreferences.getString:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+     166: dup
+     167: ifnonnull     173
+     170: pop
+     171: ldc           #245                // String
+     173: checkcast     #251                // class java/lang/CharSequence
+     176: invokevirtual #255                // Method android/widget/EditText.setText:(Ljava/lang/CharSequence;)V
+     179: aload_0
+     180: getfield      #198                // Field openAccessibilityButton:Landroid/widget/Button;
+     183: dup
+     184: ifnonnull     195
+     187: pop
+     188: ldc_w         #256                // String openAccessibilityButton
+     191: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     194: aconst_null
+     195: aload_0
+     196: invokedynamic #267,  0            // InvokeDynamic #6:onClick:(Lcom/example/project3/MainActivity;)Landroid/view/View$OnClickListener;
+     201: invokevirtual #271                // Method android/widget/Button.setOnClickListener:(Landroid/view/View$OnClickListener;)V
+     204: aload_0
+     205: getfield      #221                // Field downloadButton:Landroid/widget/Button;
+     208: dup
+     209: ifnonnull     220
+     212: pop
+     213: ldc_w         #272                // String downloadButton
+     216: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     219: aconst_null
+     220: aload_0
+     221: invokedynamic #277,  0            // InvokeDynamic #7:onClick:(Lcom/example/project3/MainActivity;)Landroid/view/View$OnClickListener;
+     226: invokevirtual #271                // Method android/widget/Button.setOnClickListener:(Landroid/view/View$OnClickListener;)V
+     229: aload_0
+     230: aload_0
+     231: invokevirtual #281                // Method getIntent:()Landroid/content/Intent;
+     234: invokespecial #285                // Method handleIncomingIntent:(Landroid/content/Intent;)V
+     237: aload_0
+     238: invokespecial #288                // Method refreshChromeConnection:()V
+     241: return
+
+  protected void onNewIntent(android.content.Intent);
+    Code:
+       0: aload_1
+       1: ldc_w         #298                // String intent
+       4: invokestatic  #301                // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+       7: aload_0
+       8: aload_1
+       9: invokespecial #303                // Method androidx/appcompat/app/AppCompatActivity.onNewIntent:(Landroid/content/Intent;)V
+      12: aload_0
+      13: aload_1
+      14: invokevirtual #306                // Method setIntent:(Landroid/content/Intent;)V
+      17: aload_0
+      18: aload_1
+      19: invokespecial #285                // Method handleIncomingIntent:(Landroid/content/Intent;)V
+      22: return
+
+  protected void onResume();
+    Code:
+       0: aload_0
+       1: invokespecial #310                // Method androidx/appcompat/app/AppCompatActivity.onResume:()V
+       4: aload_0
+       5: getfield      #114                // Field mainHandler:Landroid/os/Handler;
+       8: aload_0
+       9: getfield      #123                // Field chromePoller:Lcom/example/project3/MainActivity$chromePoller$1;
+      12: checkcast     #312                // class java/lang/Runnable
+      15: invokevirtual #316                // Method android/os/Handler.post:(Ljava/lang/Runnable;)Z
+      18: pop
+      19: return
+
+  protected void onPause();
+    Code:
+       0: aload_0
+       1: invokespecial #319                // Method androidx/appcompat/app/AppCompatActivity.onPause:()V
+       4: aload_0
+       5: getfield      #114                // Field mainHandler:Landroid/os/Handler;
+       8: aload_0
+       9: getfield      #123                // Field chromePoller:Lcom/example/project3/MainActivity$chromePoller$1;
+      12: checkcast     #312                // class java/lang/Runnable
+      15: invokevirtual #323                // Method android/os/Handler.removeCallbacks:(Ljava/lang/Runnable;)V
+      18: return
+
+  protected void onDestroy();
+    Code:
+       0: aload_0
+       1: invokespecial #326                // Method androidx/appcompat/app/AppCompatActivity.onDestroy:()V
+       4: aload_0
+       5: getfield      #114                // Field mainHandler:Landroid/os/Handler;
+       8: aconst_null
+       9: invokevirtual #330                // Method android/os/Handler.removeCallbacksAndMessages:(Ljava/lang/Object;)V
+      12: return
+
+  private final void handleIncomingIntent(android.content.Intent);
+    Code:
+       0: aload_1
+       1: ifnonnull     5
+       4: return
+       5: aload_1
+       6: invokevirtual #336                // Method android/content/Intent.getAction:()Ljava/lang/String;
+       9: astore_3
+      10: aload_3
+      11: ifnull        240
+      14: aload_3
+      15: invokevirtual #340                // Method java/lang/String.hashCode:()I
+      18: lookupswitch  { // 2
+
+           -1173264947: 57
+
+           -1173171990: 44
+               default: 240
+          }
+      44: aload_3
+      45: ldc_w         #342                // String android.intent.action.VIEW
+      48: invokevirtual #346                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+      51: ifne          70
+      54: goto          240
+      57: aload_3
+      58: ldc_w         #348                // String android.intent.action.SEND
+      61: invokevirtual #346                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+      64: ifne          88
+      67: goto          240
+      70: aload_0
+      71: aload_1
+      72: invokevirtual #351                // Method android/content/Intent.getDataString:()Ljava/lang/String;
+      75: dup
+      76: ifnonnull     82
+      79: pop
+      80: ldc           #245                // String
+      82: invokespecial #355                // Method extractYoutubeUrl:(Ljava/lang/String;)Ljava/lang/String;
+      85: goto          241
+      88: new           #357                // class java/lang/StringBuilder
+      91: dup
+      92: invokespecial #358                // Method java/lang/StringBuilder."<init>":()V
+      95: astore        5
+      97: aload         5
+      99: astore        6
+     101: iconst_0
+     102: istore        7
+     104: aload         6
+     106: aload_1
+     107: ldc_w         #360                // String android.intent.extra.TEXT
+     110: invokevirtual #363                // Method android/content/Intent.getStringExtra:(Ljava/lang/String;)Ljava/lang/String;
+     113: dup
+     114: ifnonnull     120
+     117: pop
+     118: ldc           #245                // String
+     120: invokevirtual #367                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+     123: pop
+     124: aload         6
+     126: ldc_w         #369                // String \n
+     129: invokevirtual #367                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+     132: pop
+     133: aload         6
+     135: aload_1
+     136: ldc_w         #371                // String android.intent.extra.SUBJECT
+     139: invokevirtual #363                // Method android/content/Intent.getStringExtra:(Ljava/lang/String;)Ljava/lang/String;
+     142: dup
+     143: ifnonnull     149
+     146: pop
+     147: ldc           #245                // String
+     149: invokevirtual #367                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+     152: pop
+     153: aload_1
+     154: invokevirtual #375                // Method android/content/Intent.getClipData:()Landroid/content/ClipData;
+     157: astore        8
+     159: aload         8
+     161: ifnull        216
+     164: iconst_0
+     165: istore        9
+     167: aload         8
+     169: invokevirtual #380                // Method android/content/ClipData.getItemCount:()I
+     172: istore        10
+     174: iload         9
+     176: iload         10
+     178: if_icmpge     216
+     181: aload         6
+     183: ldc_w         #369                // String \n
+     186: invokevirtual #367                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+     189: pop
+     190: aload         6
+     192: aload         8
+     194: iload         9
+     196: invokevirtual #384                // Method android/content/ClipData.getItemAt:(I)Landroid/content/ClipData$Item;
+     199: aload_0
+     200: checkcast     #386                // class android/content/Context
+     203: invokevirtual #392                // Method android/content/ClipData$Item.coerceToText:(Landroid/content/Context;)Ljava/lang/CharSequence;
+     206: invokevirtual #395                // Method java/lang/StringBuilder.append:(Ljava/lang/CharSequence;)Ljava/lang/StringBuilder;
+     209: pop
+     210: iinc          9, 1
+     213: goto          174
+     216: nop
+     217: aload         5
+     219: invokevirtual #398                // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+     222: dup
+     223: ldc_w         #400                // String toString(...)
+     226: invokestatic  #154                // Method kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
+     229: astore        4
+     231: aload_0
+     232: aload         4
+     234: invokespecial #355                // Method extractYoutubeUrl:(Ljava/lang/String;)Ljava/lang/String;
+     237: goto          241
+     240: aconst_null
+     241: astore_2
+     242: aload_2
+     243: dup
+     244: ifnull        274
+     247: astore        4
+     249: getstatic     #406                // Field com/example/project3/YoutubeUrlParser.INSTANCE:Lcom/example/project3/YoutubeUrlParser;
+     252: astore        5
+     254: aload         4
+     256: astore        6
+     258: iconst_0
+     259: istore        7
+     261: iconst_0
+     262: istore        8
+     264: aload         5
+     266: aload         6
+     268: invokevirtual #409                // Method com/example/project3/YoutubeUrlParser.canonicalWatchUrl:(Ljava/lang/String;)Ljava/lang/String;
+     271: goto          276
+     274: pop
+     275: aconst_null
+     276: astore_3
+     277: aload_3
+     278: checkcast     #251                // class java/lang/CharSequence
+     281: astore        4
+     283: aload         4
+     285: ifnull        296
+     288: aload         4
+     290: invokestatic  #415                // Method kotlin/text/StringsKt.isBlank:(Ljava/lang/CharSequence;)Z
+     293: ifeq          300
+     296: iconst_1
+     297: goto          301
+     300: iconst_0
+     301: ifne          374
+     304: aload_0
+     305: invokespecial #417                // Method getChromeCaptureStore:()Lcom/example/project3/ChromeCaptureStore;
+     308: aload_3
+     309: invokevirtual #420                // Method com/example/project3/ChromeCaptureStore.saveObservedUrl:(Ljava/lang/String;)V
+     312: aload_0
+     313: getfield      #185                // Field urlText:Landroid/widget/TextView;
+     316: dup
+     317: ifnonnull     328
+     320: pop
+     321: ldc_w         #421                // String urlText
+     324: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     327: aconst_null
+     328: aload_3
+     329: checkcast     #251                // class java/lang/CharSequence
+     332: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     335: aload_0
+     336: getfield      #426                // Field isDownloading:Z
+     339: ifne          429
+     342: aload_0
+     343: getfield      #190                // Field statusText:Landroid/widget/TextView;
+     346: dup
+     347: ifnonnull     358
+     350: pop
+     351: ldc_w         #427                // String statusText
+     354: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     357: aconst_null
+     358: aload_0
+     359: getstatic     #432                // Field com/example/project3/R$string.status_chrome_connected:I
+     362: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     365: checkcast     #251                // class java/lang/CharSequence
+     368: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     371: goto          429
+     374: aload_1
+     375: invokevirtual #336                // Method android/content/Intent.getAction:()Ljava/lang/String;
+     378: ldc_w         #348                // String android.intent.action.SEND
+     381: invokestatic  #439                // Method kotlin/jvm/internal/Intrinsics.areEqual:(Ljava/lang/Object;Ljava/lang/Object;)Z
+     384: ifne          400
+     387: aload_1
+     388: invokevirtual #336                // Method android/content/Intent.getAction:()Ljava/lang/String;
+     391: ldc_w         #342                // String android.intent.action.VIEW
+     394: invokestatic  #439                // Method kotlin/jvm/internal/Intrinsics.areEqual:(Ljava/lang/Object;Ljava/lang/Object;)Z
+     397: ifeq          429
+     400: aload_0
+     401: getfield      #185                // Field urlText:Landroid/widget/TextView;
+     404: dup
+     405: ifnonnull     416
+     408: pop
+     409: ldc_w         #421                // String urlText
+     412: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     415: aconst_null
+     416: aload_0
+     417: getstatic     #442                // Field com/example/project3/R$string.url_capture_failed:I
+     420: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     423: checkcast     #251                // class java/lang/CharSequence
+     426: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     429: return
+
+  private final java.lang.String extractYoutubeUrl(java.lang.String);
+    Code:
+       0: aload_1
+       1: checkcast     #251                // class java/lang/CharSequence
+       4: invokestatic  #415                // Method kotlin/text/StringsKt.isBlank:(Ljava/lang/CharSequence;)Z
+       7: ifeq          12
+      10: aconst_null
+      11: areturn
+      12: new           #456                // class kotlin/text/Regex
+      15: dup
+      16: ldc_w         #458                // String https?://(?:www\\.)?(?:youtube\\.com/watch\\?v=[^\\s&]+(?:[^\\s]*)|youtu\\.be/[^\\s?&]+(?:[^\\s]*))
+      19: getstatic     #464                // Field kotlin/text/RegexOption.IGNORE_CASE:Lkotlin/text/RegexOption;
+      22: invokestatic  #470                // Method kotlin/collections/SetsKt.setOf:(Ljava/lang/Object;)Ljava/util/Set;
+      25: invokespecial #473                // Method kotlin/text/Regex."<init>":(Ljava/lang/String;Ljava/util/Set;)V
+      28: astore_2
+      29: aload_2
+      30: aload_1
+      31: checkcast     #251                // class java/lang/CharSequence
+      34: iconst_0
+      35: iconst_2
+      36: aconst_null
+      37: invokestatic  #477                // Method kotlin/text/Regex.find$default:(Lkotlin/text/Regex;Ljava/lang/CharSequence;IILjava/lang/Object;)Lkotlin/text/MatchResult;
+      40: dup
+      41: ifnull        52
+      44: invokeinterface #481,  1          // InterfaceMethod kotlin/text/MatchResult.getValue:()Ljava/lang/String;
+      49: goto          54
+      52: pop
+      53: aconst_null
+      54: areturn
+
+  private final void refreshChromeConnection();
+    Code:
+       0: aload_0
+       1: invokespecial #417                // Method getChromeCaptureStore:()Lcom/example/project3/ChromeCaptureStore;
+       4: invokevirtual #487                // Method com/example/project3/ChromeCaptureStore.getObservedUrl:()Ljava/lang/String;
+       7: astore_1
+       8: aload_0
+       9: invokespecial #491                // Method isAccessibilityEnabled:()Z
+      12: ifeq          43
+      15: aload_1
+      16: checkcast     #251                // class java/lang/CharSequence
+      19: astore_3
+      20: aload_3
+      21: ifnull        31
+      24: aload_3
+      25: invokestatic  #415                // Method kotlin/text/StringsKt.isBlank:(Ljava/lang/CharSequence;)Z
+      28: ifeq          35
+      31: iconst_1
+      32: goto          36
+      35: iconst_0
+      36: ifne          43
+      39: iconst_1
+      40: goto          44
+      43: iconst_0
+      44: istore_2
+      45: iload_2
+      46: ifeq          111
+      49: aload_0
+      50: getfield      #185                // Field urlText:Landroid/widget/TextView;
+      53: dup
+      54: ifnonnull     65
+      57: pop
+      58: ldc_w         #421                // String urlText
+      61: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      64: aconst_null
+      65: aload_1
+      66: checkcast     #251                // class java/lang/CharSequence
+      69: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+      72: aload_0
+      73: getfield      #426                // Field isDownloading:Z
+      76: ifne          147
+      79: aload_0
+      80: getfield      #190                // Field statusText:Landroid/widget/TextView;
+      83: dup
+      84: ifnonnull     95
+      87: pop
+      88: ldc_w         #427                // String statusText
+      91: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      94: aconst_null
+      95: aload_0
+      96: getstatic     #432                // Field com/example/project3/R$string.status_chrome_connected:I
+      99: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     102: checkcast     #251                // class java/lang/CharSequence
+     105: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     108: goto          147
+     111: aload_0
+     112: getfield      #426                // Field isDownloading:Z
+     115: ifne          147
+     118: aload_0
+     119: getfield      #190                // Field statusText:Landroid/widget/TextView;
+     122: dup
+     123: ifnonnull     134
+     126: pop
+     127: ldc_w         #427                // String statusText
+     130: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     133: aconst_null
+     134: aload_0
+     135: getstatic     #494                // Field com/example/project3/R$string.status_chrome_not_connected:I
+     138: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     141: checkcast     #251                // class java/lang/CharSequence
+     144: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     147: return
+
+  private final boolean isAccessibilityEnabled();
+    Code:
+       0: aload_0
+       1: invokevirtual #500                // Method getContentResolver:()Landroid/content/ContentResolver;
+       4: ldc_w         #502                // String enabled_accessibility_services
+       7: invokestatic  #507                // Method android/provider/Settings$Secure.getString:(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;
+      10: dup
+      11: ifnonnull     17
+      14: pop
+      15: iconst_0
+      16: ireturn
+      17: astore_1
+      18: aload_0
+      19: invokevirtual #510                // Method getPackageName:()Ljava/lang/String;
+      22: invokedynamic #521,  0            // InvokeDynamic #8:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+      27: astore_2
+      28: aload_0
+      29: invokevirtual #510                // Method getPackageName:()Ljava/lang/String;
+      32: ldc_w         #523                // class com/example/project3/ChromeAccessibilityService
+      35: invokevirtual #528                // Method java/lang/Class.getName:()Ljava/lang/String;
+      38: invokedynamic #532,  0            // InvokeDynamic #9:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+      43: astore_3
+      44: aload_1
+      45: checkcast     #251                // class java/lang/CharSequence
+      48: iconst_1
+      49: newarray       char
+      51: astore        4
+      53: aload         4
+      55: iconst_0
+      56: bipush        58
+      58: castore
+      59: aload         4
+      61: iconst_0
+      62: iconst_0
+      63: bipush        6
+      65: aconst_null
+      66: invokestatic  #536                // Method kotlin/text/StringsKt.split$default:(Ljava/lang/CharSequence;[CZIILjava/lang/Object;)Ljava/util/List;
+      69: checkcast     #538                // class java/lang/Iterable
+      72: astore        4
+      74: nop
+      75: iconst_0
+      76: istore        5
+      78: aload         4
+      80: instanceof    #540                // class java/util/Collection
+      83: ifeq          103
+      86: aload         4
+      88: checkcast     #540                // class java/util/Collection
+      91: invokeinterface #543,  1          // InterfaceMethod java/util/Collection.isEmpty:()Z
+      96: ifeq          103
+      99: iconst_0
+     100: goto          174
+     103: aload         4
+     105: invokeinterface #547,  1          // InterfaceMethod java/lang/Iterable.iterator:()Ljava/util/Iterator;
+     110: astore        6
+     112: aload         6
+     114: invokeinterface #552,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+     119: ifeq          173
+     122: aload         6
+     124: invokeinterface #555,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+     129: astore        7
+     131: aload         7
+     133: checkcast     #294                // class java/lang/String
+     136: astore        8
+     138: iconst_0
+     139: istore        9
+     141: aload         8
+     143: aload_2
+     144: iconst_1
+     145: invokestatic  #558                // Method kotlin/text/StringsKt.equals:(Ljava/lang/String;Ljava/lang/String;Z)Z
+     148: ifne          161
+     151: aload         8
+     153: aload_3
+     154: iconst_1
+     155: invokestatic  #558                // Method kotlin/text/StringsKt.equals:(Ljava/lang/String;Ljava/lang/String;Z)Z
+     158: ifeq          165
+     161: iconst_1
+     162: goto          166
+     165: iconst_0
+     166: ifeq          112
+     169: iconst_1
+     170: goto          174
+     173: iconst_0
+     174: ireturn
+
+  private final void startDownloadFlow();
+    Code:
+       0: aload_0
+       1: invokespecial #417                // Method getChromeCaptureStore:()Lcom/example/project3/ChromeCaptureStore;
+       4: invokevirtual #487                // Method com/example/project3/ChromeCaptureStore.getObservedUrl:()Ljava/lang/String;
+       7: dup
+       8: ifnull        46
+      11: astore_3
+      12: aload_3
+      13: astore        4
+      15: iconst_0
+      16: istore        5
+      18: aload         4
+      20: checkcast     #251                // class java/lang/CharSequence
+      23: invokestatic  #415                // Method kotlin/text/StringsKt.isBlank:(Ljava/lang/CharSequence;)Z
+      26: ifne          33
+      29: iconst_1
+      30: goto          34
+      33: iconst_0
+      34: nop
+      35: ifeq          42
+      38: aload_3
+      39: goto          48
+      42: aconst_null
+      43: goto          48
+      46: pop
+      47: aconst_null
+      48: astore_1
+      49: aload_1
+      50: checkcast     #251                // class java/lang/CharSequence
+      53: astore_2
+      54: aload_2
+      55: ifnull        65
+      58: aload_2
+      59: invokestatic  #415                // Method kotlin/text/StringsKt.isBlank:(Ljava/lang/CharSequence;)Z
+      62: ifeq          69
+      65: iconst_1
+      66: goto          70
+      69: iconst_0
+      70: ifeq          103
+      73: aload_0
+      74: getfield      #190                // Field statusText:Landroid/widget/TextView;
+      77: dup
+      78: ifnonnull     89
+      81: pop
+      82: ldc_w         #427                // String statusText
+      85: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      88: aconst_null
+      89: aload_0
+      90: getstatic     #574                // Field com/example/project3/R$string.error_missing_url:I
+      93: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+      96: checkcast     #251                // class java/lang/CharSequence
+      99: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     102: return
+     103: aload_0
+     104: aload_0
+     105: getfield      #206                // Field startInput:Landroid/widget/EditText;
+     108: dup
+     109: ifnonnull     120
+     112: pop
+     113: ldc_w         #575                // String startInput
+     116: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     119: aconst_null
+     120: invokevirtual #579                // Method android/widget/EditText.getText:()Landroid/text/Editable;
+     123: dup
+     124: ifnull        133
+     127: invokevirtual #580                // Method java/lang/Object.toString:()Ljava/lang/String;
+     130: goto          135
+     133: pop
+     134: aconst_null
+     135: dup
+     136: ifnonnull     142
+     139: pop
+     140: ldc           #245                // String
+     142: invokespecial #584                // Method parseTimeToSeconds:(Ljava/lang/String;)Ljava/lang/Integer;
+     145: astore_2
+     146: aload_0
+     147: aload_0
+     148: getfield      #211                // Field endInput:Landroid/widget/EditText;
+     151: dup
+     152: ifnonnull     163
+     155: pop
+     156: ldc_w         #585                // String endInput
+     159: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     162: aconst_null
+     163: invokevirtual #579                // Method android/widget/EditText.getText:()Landroid/text/Editable;
+     166: dup
+     167: ifnull        176
+     170: invokevirtual #580                // Method java/lang/Object.toString:()Ljava/lang/String;
+     173: goto          178
+     176: pop
+     177: aconst_null
+     178: dup
+     179: ifnonnull     185
+     182: pop
+     183: ldc           #245                // String
+     185: invokespecial #584                // Method parseTimeToSeconds:(Ljava/lang/String;)Ljava/lang/Integer;
+     188: astore_3
+     189: aload_0
+     190: getfield      #216                // Field apiKeyInput:Landroid/widget/EditText;
+     193: dup
+     194: ifnonnull     204
+     197: pop
+     198: ldc           #235                // String apiKeyInput
+     200: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     203: aconst_null
+     204: invokevirtual #579                // Method android/widget/EditText.getText:()Landroid/text/Editable;
+     207: dup
+     208: ifnull        230
+     211: invokevirtual #580                // Method java/lang/Object.toString:()Ljava/lang/String;
+     214: dup
+     215: ifnull        230
+     218: checkcast     #251                // class java/lang/CharSequence
+     221: invokestatic  #589                // Method kotlin/text/StringsKt.trim:(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;
+     224: invokevirtual #580                // Method java/lang/Object.toString:()Ljava/lang/String;
+     227: goto          232
+     230: pop
+     231: aconst_null
+     232: dup
+     233: ifnonnull     239
+     236: pop
+     237: ldc           #245                // String
+     239: astore        4
+     241: aload_2
+     242: ifnull        249
+     245: aload_3
+     246: ifnonnull     279
+     249: aload_0
+     250: getfield      #190                // Field statusText:Landroid/widget/TextView;
+     253: dup
+     254: ifnonnull     265
+     257: pop
+     258: ldc_w         #427                // String statusText
+     261: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     264: aconst_null
+     265: aload_0
+     266: getstatic     #592                // Field com/example/project3/R$string.error_invalid_time:I
+     269: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     272: checkcast     #251                // class java/lang/CharSequence
+     275: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     278: return
+     279: aload_3
+     280: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     283: aload_2
+     284: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     287: if_icmpgt     320
+     290: aload_0
+     291: getfield      #190                // Field statusText:Landroid/widget/TextView;
+     294: dup
+     295: ifnonnull     306
+     298: pop
+     299: ldc_w         #427                // String statusText
+     302: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     305: aconst_null
+     306: aload_0
+     307: getstatic     #600                // Field com/example/project3/R$string.error_end_before_start:I
+     310: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     313: checkcast     #251                // class java/lang/CharSequence
+     316: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     319: return
+     320: aload         4
+     322: checkcast     #251                // class java/lang/CharSequence
+     325: invokestatic  #415                // Method kotlin/text/StringsKt.isBlank:(Ljava/lang/CharSequence;)Z
+     328: ifeq          361
+     331: aload_0
+     332: getfield      #190                // Field statusText:Landroid/widget/TextView;
+     335: dup
+     336: ifnonnull     347
+     339: pop
+     340: ldc_w         #427                // String statusText
+     343: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     346: aconst_null
+     347: aload_0
+     348: getstatic     #603                // Field com/example/project3/R$string.error_missing_api_key:I
+     351: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     354: checkcast     #251                // class java/lang/CharSequence
+     357: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     360: return
+     361: aload_0
+     362: getfield      #426                // Field isDownloading:Z
+     365: ifeq          369
+     368: return
+     369: aload_0
+     370: invokespecial #241                // Method getPrefs:()Landroid/content/SharedPreferences;
+     373: invokeinterface #607,  1          // InterfaceMethod android/content/SharedPreferences.edit:()Landroid/content/SharedPreferences$Editor;
+     378: ldc           #243                // String openai_api_key
+     380: aload         4
+     382: invokeinterface #613,  3          // InterfaceMethod android/content/SharedPreferences$Editor.putString:(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;
+     387: invokeinterface #616,  1          // InterfaceMethod android/content/SharedPreferences$Editor.apply:()V
+     392: aload_0
+     393: iconst_1
+     394: putfield      #426                // Field isDownloading:Z
+     397: aload_0
+     398: getfield      #221                // Field downloadButton:Landroid/widget/Button;
+     401: dup
+     402: ifnonnull     413
+     405: pop
+     406: ldc_w         #272                // String downloadButton
+     409: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     412: aconst_null
+     413: iconst_0
+     414: invokevirtual #620                // Method android/widget/Button.setEnabled:(Z)V
+     417: aload_0
+     418: getfield      #229                // Field downloadProgress:Landroid/widget/ProgressBar;
+     421: dup
+     422: ifnonnull     433
+     425: pop
+     426: ldc_w         #621                // String downloadProgress
+     429: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     432: aconst_null
+     433: iconst_0
+     434: invokevirtual #624                // Method android/widget/ProgressBar.setVisibility:(I)V
+     437: aload_0
+     438: getfield      #190                // Field statusText:Landroid/widget/TextView;
+     441: dup
+     442: ifnonnull     453
+     445: pop
+     446: ldc_w         #427                // String statusText
+     449: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     452: aconst_null
+     453: aload_0
+     454: getstatic     #627                // Field com/example/project3/R$string.status_stage_resolving:I
+     457: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     460: checkcast     #251                // class java/lang/CharSequence
+     463: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     466: aload_0
+     467: getfield      #234                // Field sttResultText:Landroid/widget/TextView;
+     470: dup
+     471: ifnonnull     482
+     474: pop
+     475: ldc_w         #628                // String sttResultText
+     478: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     481: aconst_null
+     482: aload_0
+     483: getstatic     #631                // Field com/example/project3/R$string.stt_result_empty:I
+     486: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+     489: checkcast     #251                // class java/lang/CharSequence
+     492: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+     495: new           #633                // class java/lang/Thread
+     498: dup
+     499: aload_0
+     500: aload_1
+     501: aload_2
+     502: aload_3
+     503: aload         4
+     505: invokedynamic #643,  0            // InvokeDynamic #10:run:(Lcom/example/project3/MainActivity;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;)Ljava/lang/Runnable;
+     510: invokespecial #645                // Method java/lang/Thread."<init>":(Ljava/lang/Runnable;)V
+     513: invokevirtual #648                // Method java/lang/Thread.start:()V
+     516: return
+
+  private final java.lang.String renderSentenceResult(java.util.List<com.example.project3.SentenceTimestamp>, com.example.project3.WhisperVerboseResult, int, int);
+    Code:
+       0: aload_1
+       1: invokeinterface #662,  1          // InterfaceMethod java/util/List.isEmpty:()Z
+       6: ifeq          125
+       9: aload_2
+      10: invokevirtual #668                // Method com/example/project3/WhisperVerboseResult.getSegments:()Ljava/util/List;
+      13: checkcast     #540                // class java/util/Collection
+      16: invokeinterface #543,  1          // InterfaceMethod java/util/Collection.isEmpty:()Z
+      21: ifne          28
+      24: iconst_1
+      25: goto          29
+      28: iconst_0
+      29: ifeq          62
+      32: aload_2
+      33: invokevirtual #668                // Method com/example/project3/WhisperVerboseResult.getSegments:()Ljava/util/List;
+      36: checkcast     #538                // class java/lang/Iterable
+      39: ldc_w         #670                // String \n\n
+      42: checkcast     #251                // class java/lang/CharSequence
+      45: aconst_null
+      46: aconst_null
+      47: iconst_0
+      48: aconst_null
+      49: aload_0
+      50: invokedynamic #682,  0            // InvokeDynamic #11:invoke:(Lcom/example/project3/MainActivity;)Lkotlin/jvm/functions/Function1;
+      55: bipush        30
+      57: aconst_null
+      58: invokestatic  #688                // Method kotlin/collections/CollectionsKt.joinToString$default:(Ljava/lang/Iterable;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Ljava/lang/CharSequence;ILjava/lang/CharSequence;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ljava/lang/String;
+      61: areturn
+      62: aload_2
+      63: invokevirtual #691                // Method com/example/project3/WhisperVerboseResult.getFullText:()Ljava/lang/String;
+      66: checkcast     #251                // class java/lang/CharSequence
+      69: invokestatic  #589                // Method kotlin/text/StringsKt.trim:(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;
+      72: invokevirtual #580                // Method java/lang/Object.toString:()Ljava/lang/String;
+      75: checkcast     #251                // class java/lang/CharSequence
+      78: astore        6
+      80: aload         6
+      82: invokestatic  #415                // Method kotlin/text/StringsKt.isBlank:(Ljava/lang/CharSequence;)Z
+      85: ifeq          97
+      88: iconst_0
+      89: istore        7
+      91: ldc_w         #693                // String No sentence result.
+      94: goto          99
+      97: aload         6
+      99: checkcast     #294                // class java/lang/String
+     102: astore        5
+     104: aload_0
+     105: iload_3
+     106: i2d
+     107: invokespecial #697                // Method formatSec:(D)Ljava/lang/String;
+     110: aload_0
+     111: iload         4
+     113: i2d
+     114: invokespecial #697                // Method formatSec:(D)Ljava/lang/String;
+     117: aload         5
+     119: invokedynamic #702,  0            // InvokeDynamic #12:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+     124: areturn
+     125: aload_1
+     126: checkcast     #538                // class java/lang/Iterable
+     129: ldc_w         #670                // String \n\n
+     132: checkcast     #251                // class java/lang/CharSequence
+     135: aconst_null
+     136: aconst_null
+     137: iconst_0
+     138: aconst_null
+     139: aload_0
+     140: invokedynamic #710,  0            // InvokeDynamic #13:invoke:(Lcom/example/project3/MainActivity;)Lkotlin/jvm/functions/Function1;
+     145: bipush        30
+     147: aconst_null
+     148: invokestatic  #688                // Method kotlin/collections/CollectionsKt.joinToString$default:(Ljava/lang/Iterable;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Ljava/lang/CharSequence;ILjava/lang/CharSequence;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ljava/lang/String;
+     151: areturn
+
+  private final com.example.project3.WhisperVerboseResult offsetTranscript(com.example.project3.WhisperVerboseResult, double);
+    Code:
+       0: aload_1
+       1: invokevirtual #691                // Method com/example/project3/WhisperVerboseResult.getFullText:()Ljava/lang/String;
+       4: aload_1
+       5: invokevirtual #668                // Method com/example/project3/WhisperVerboseResult.getSegments:()Ljava/util/List;
+       8: checkcast     #538                // class java/lang/Iterable
+      11: astore        4
+      13: astore        28
+      15: iconst_0
+      16: istore        5
+      18: aload         4
+      20: astore        6
+      22: new           #722                // class java/util/ArrayList
+      25: dup
+      26: aload         4
+      28: bipush        10
+      30: invokestatic  #726                // Method kotlin/collections/CollectionsKt.collectionSizeOrDefault:(Ljava/lang/Iterable;I)I
+      33: invokespecial #728                // Method java/util/ArrayList."<init>":(I)V
+      36: checkcast     #540                // class java/util/Collection
+      39: astore        7
+      41: iconst_0
+      42: istore        8
+      44: aload         6
+      46: invokeinterface #547,  1          // InterfaceMethod java/lang/Iterable.iterator:()Ljava/util/Iterator;
+      51: astore        9
+      53: aload         9
+      55: invokeinterface #552,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+      60: ifeq          283
+      63: aload         9
+      65: invokeinterface #555,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      70: astore        10
+      72: aload         7
+      74: aload         10
+      76: checkcast     #730                // class com/example/project3/WhisperSegment
+      79: astore        11
+      81: astore        29
+      83: iconst_0
+      84: istore        12
+      86: aload         11
+      88: invokevirtual #734                // Method com/example/project3/WhisperSegment.getStart:()D
+      91: dload_2
+      92: dadd
+      93: aload         11
+      95: invokevirtual #737                // Method com/example/project3/WhisperSegment.getEnd:()D
+      98: dload_2
+      99: dadd
+     100: aload         11
+     102: invokevirtual #739                // Method com/example/project3/WhisperSegment.getText:()Ljava/lang/String;
+     105: aload         11
+     107: invokevirtual #742                // Method com/example/project3/WhisperSegment.getWords:()Ljava/util/List;
+     110: checkcast     #538                // class java/lang/Iterable
+     113: astore        13
+     115: astore        14
+     117: dstore        15
+     119: dstore        17
+     121: iconst_0
+     122: istore        19
+     124: aload         13
+     126: astore        20
+     128: new           #722                // class java/util/ArrayList
+     131: dup
+     132: aload         13
+     134: bipush        10
+     136: invokestatic  #726                // Method kotlin/collections/CollectionsKt.collectionSizeOrDefault:(Ljava/lang/Iterable;I)I
+     139: invokespecial #728                // Method java/util/ArrayList."<init>":(I)V
+     142: checkcast     #540                // class java/util/Collection
+     145: astore        21
+     147: iconst_0
+     148: istore        22
+     150: aload         20
+     152: invokeinterface #547,  1          // InterfaceMethod java/lang/Iterable.iterator:()Ljava/util/Iterator;
+     157: astore        23
+     159: aload         23
+     161: invokeinterface #552,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+     166: ifeq          231
+     169: aload         23
+     171: invokeinterface #555,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+     176: astore        24
+     178: aload         21
+     180: aload         24
+     182: checkcast     #744                // class com/example/project3/WhisperWord
+     185: astore        25
+     187: astore        26
+     189: iconst_0
+     190: istore        27
+     192: new           #744                // class com/example/project3/WhisperWord
+     195: dup
+     196: aload         25
+     198: invokevirtual #745                // Method com/example/project3/WhisperWord.getStart:()D
+     201: dload_2
+     202: dadd
+     203: aload         25
+     205: invokevirtual #746                // Method com/example/project3/WhisperWord.getEnd:()D
+     208: dload_2
+     209: dadd
+     210: aload         25
+     212: invokevirtual #749                // Method com/example/project3/WhisperWord.getWord:()Ljava/lang/String;
+     215: invokespecial #752                // Method com/example/project3/WhisperWord."<init>":(DDLjava/lang/String;)V
+     218: nop
+     219: aload         26
+     221: swap
+     222: invokeinterface #755,  2          // InterfaceMethod java/util/Collection.add:(Ljava/lang/Object;)Z
+     227: pop
+     228: goto          159
+     231: aload         21
+     233: checkcast     #661                // class java/util/List
+     236: nop
+     237: astore        26
+     239: dload         17
+     241: dload         15
+     243: aload         14
+     245: aload         26
+     247: astore        30
+     249: astore        31
+     251: dstore        32
+     253: dstore        34
+     255: new           #730                // class com/example/project3/WhisperSegment
+     258: dup
+     259: dload         34
+     261: dload         32
+     263: aload         31
+     265: aload         30
+     267: invokespecial #758                // Method com/example/project3/WhisperSegment."<init>":(DDLjava/lang/String;Ljava/util/List;)V
+     270: nop
+     271: aload         29
+     273: swap
+     274: invokeinterface #755,  2          // InterfaceMethod java/util/Collection.add:(Ljava/lang/Object;)Z
+     279: pop
+     280: goto          53
+     283: aload         7
+     285: checkcast     #661                // class java/util/List
+     288: nop
+     289: aload         28
+     291: swap
+     292: astore        36
+     294: astore        37
+     296: new           #664                // class com/example/project3/WhisperVerboseResult
+     299: dup
+     300: aload         37
+     302: aload         36
+     304: invokespecial #761                // Method com/example/project3/WhisperVerboseResult."<init>":(Ljava/lang/String;Ljava/util/List;)V
+     307: areturn
+
+  private final java.lang.String formatSec(double);
+    Code:
+       0: dload_1
+       1: dconst_0
+       2: invokestatic  #782                // Method kotlin/ranges/RangesKt.coerceAtLeast:(DD)D
+       5: dstore_3
+       6: dload_3
+       7: ldc2_w        #783                // double 10.0d
+      10: dmul
+      11: d2i
+      12: istore        5
+      14: iload         5
+      16: bipush        10
+      18: idiv
+      19: istore        6
+      21: iload         5
+      23: bipush        10
+      25: irem
+      26: istore        7
+      28: iload         6
+      30: sipush        3600
+      33: idiv
+      34: istore        8
+      36: iload         6
+      38: sipush        3600
+      41: irem
+      42: bipush        60
+      44: idiv
+      45: istore        9
+      47: iload         6
+      49: bipush        60
+      51: irem
+      52: istore        10
+      54: getstatic     #789                // Field kotlin/jvm/internal/StringCompanionObject.INSTANCE:Lkotlin/jvm/internal/StringCompanionObject;
+      57: pop
+      58: ldc_w         #791                // String %02d:%02d:%02d.%d
+      61: astore        11
+      63: iconst_4
+      64: anewarray     #570                // class java/lang/Object
+      67: astore        12
+      69: aload         12
+      71: iconst_0
+      72: iload         8
+      74: invokestatic  #795                // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+      77: aastore
+      78: aload         12
+      80: iconst_1
+      81: iload         9
+      83: invokestatic  #795                // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+      86: aastore
+      87: aload         12
+      89: iconst_2
+      90: iload         10
+      92: invokestatic  #795                // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+      95: aastore
+      96: aload         12
+      98: iconst_3
+      99: iload         7
+     101: invokestatic  #795                // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+     104: aastore
+     105: aload         12
+     107: astore        12
+     109: aload         11
+     111: aload         12
+     113: aload         12
+     115: arraylength
+     116: invokestatic  #801                // Method java/util/Arrays.copyOf:([Ljava/lang/Object;I)[Ljava/lang/Object;
+     119: invokestatic  #805                // Method java/lang/String.format:(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;
+     122: dup
+     123: ldc_w         #807                // String format(...)
+     126: invokestatic  #154                // Method kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
+     129: areturn
+
+  private final java.lang.Integer parseTimeToSeconds(java.lang.String);
+    Code:
+       0: aload_1
+       1: checkcast     #251                // class java/lang/CharSequence
+       4: invokestatic  #589                // Method kotlin/text/StringsKt.trim:(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;
+       7: invokevirtual #580                // Method java/lang/Object.toString:()Ljava/lang/String;
+      10: astore_2
+      11: aload_2
+      12: checkcast     #251                // class java/lang/CharSequence
+      15: invokeinterface #818,  1          // InterfaceMethod java/lang/CharSequence.length:()I
+      20: ifne          27
+      23: iconst_1
+      24: goto          28
+      27: iconst_0
+      28: ifeq          33
+      31: aconst_null
+      32: areturn
+      33: aload_2
+      34: checkcast     #251                // class java/lang/CharSequence
+      37: astore_3
+      38: iconst_0
+      39: istore        4
+      41: iconst_0
+      42: istore        5
+      44: iload         5
+      46: aload_3
+      47: invokeinterface #818,  1          // InterfaceMethod java/lang/CharSequence.length:()I
+      52: if_icmpge     91
+      55: aload_3
+      56: iload         5
+      58: invokeinterface #822,  2          // InterfaceMethod java/lang/CharSequence.charAt:(I)C
+      63: istore        6
+      65: iload         6
+      67: istore        7
+      69: iconst_0
+      70: istore        8
+      72: iload         7
+      74: invokestatic  #828                // Method java/lang/Character.isDigit:(C)Z
+      77: nop
+      78: ifne          85
+      81: iconst_0
+      82: goto          92
+      85: iinc          5, 1
+      88: goto          44
+      91: iconst_1
+      92: ifeq          100
+      95: aload_2
+      96: invokestatic  #831                // Method kotlin/text/StringsKt.toIntOrNull:(Ljava/lang/String;)Ljava/lang/Integer;
+      99: areturn
+     100: aload_2
+     101: checkcast     #251                // class java/lang/CharSequence
+     104: iconst_1
+     105: newarray       char
+     107: astore        4
+     109: aload         4
+     111: iconst_0
+     112: bipush        58
+     114: castore
+     115: aload         4
+     117: iconst_0
+     118: iconst_0
+     119: bipush        6
+     121: aconst_null
+     122: invokestatic  #536                // Method kotlin/text/StringsKt.split$default:(Ljava/lang/CharSequence;[CZIILjava/lang/Object;)Ljava/util/List;
+     125: astore_3
+     126: aload_3
+     127: invokeinterface #834,  1          // InterfaceMethod java/util/List.size:()I
+     132: istore        4
+     134: iconst_2
+     135: iload         4
+     137: if_icmpgt     154
+     140: iload         4
+     142: iconst_4
+     143: if_icmpge     150
+     146: iconst_1
+     147: goto          155
+     150: iconst_0
+     151: goto          155
+     154: iconst_0
+     155: ifne          160
+     158: aconst_null
+     159: areturn
+     160: aload_3
+     161: checkcast     #538                // class java/lang/Iterable
+     164: astore        4
+     166: iconst_0
+     167: istore        5
+     169: aload         4
+     171: instanceof    #540                // class java/util/Collection
+     174: ifeq          194
+     177: aload         4
+     179: checkcast     #540                // class java/util/Collection
+     182: invokeinterface #543,  1          // InterfaceMethod java/util/Collection.isEmpty:()Z
+     187: ifeq          194
+     190: iconst_0
+     191: goto          329
+     194: aload         4
+     196: invokeinterface #547,  1          // InterfaceMethod java/lang/Iterable.iterator:()Ljava/util/Iterator;
+     201: astore        6
+     203: aload         6
+     205: invokeinterface #552,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+     210: ifeq          328
+     213: aload         6
+     215: invokeinterface #555,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+     220: astore        7
+     222: aload         7
+     224: checkcast     #294                // class java/lang/String
+     227: astore        8
+     229: iconst_0
+     230: istore        9
+     232: aload         8
+     234: checkcast     #251                // class java/lang/CharSequence
+     237: invokestatic  #415                // Method kotlin/text/StringsKt.isBlank:(Ljava/lang/CharSequence;)Z
+     240: ifne          316
+     243: aload         8
+     245: checkcast     #251                // class java/lang/CharSequence
+     248: astore        10
+     250: iconst_0
+     251: istore        11
+     253: iconst_0
+     254: istore        12
+     256: iload         12
+     258: aload         10
+     260: invokeinterface #818,  1          // InterfaceMethod java/lang/CharSequence.length:()I
+     265: if_icmpge     312
+     268: aload         10
+     270: iload         12
+     272: invokeinterface #822,  2          // InterfaceMethod java/lang/CharSequence.charAt:(I)C
+     277: istore        13
+     279: iload         13
+     281: istore        14
+     283: iconst_0
+     284: istore        15
+     286: iload         14
+     288: invokestatic  #828                // Method java/lang/Character.isDigit:(C)Z
+     291: ifne          298
+     294: iconst_1
+     295: goto          299
+     298: iconst_0
+     299: ifeq          306
+     302: iconst_1
+     303: goto          313
+     306: iinc          12, 1
+     309: goto          256
+     312: iconst_0
+     313: ifeq          320
+     316: iconst_1
+     317: goto          321
+     320: iconst_0
+     321: ifeq          203
+     324: iconst_1
+     325: goto          329
+     328: iconst_0
+     329: ifeq          334
+     332: aconst_null
+     333: areturn
+     334: aload_3
+     335: invokeinterface #834,  1          // InterfaceMethod java/util/List.size:()I
+     340: iconst_2
+     341: if_icmpne     414
+     344: aload_3
+     345: iconst_0
+     346: invokeinterface #838,  2          // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+     351: checkcast     #294                // class java/lang/String
+     354: invokestatic  #831                // Method kotlin/text/StringsKt.toIntOrNull:(Ljava/lang/String;)Ljava/lang/Integer;
+     357: dup
+     358: ifnull        367
+     361: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     364: goto          370
+     367: pop
+     368: aconst_null
+     369: areturn
+     370: istore        4
+     372: aload_3
+     373: iconst_1
+     374: invokeinterface #838,  2          // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+     379: checkcast     #294                // class java/lang/String
+     382: invokestatic  #831                // Method kotlin/text/StringsKt.toIntOrNull:(Ljava/lang/String;)Ljava/lang/Integer;
+     385: dup
+     386: ifnull        395
+     389: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     392: goto          398
+     395: pop
+     396: aconst_null
+     397: areturn
+     398: istore        5
+     400: iload         4
+     402: bipush        60
+     404: imul
+     405: iload         5
+     407: iadd
+     408: invokestatic  #795                // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+     411: goto          516
+     414: aload_3
+     415: iconst_0
+     416: invokeinterface #838,  2          // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+     421: checkcast     #294                // class java/lang/String
+     424: invokestatic  #831                // Method kotlin/text/StringsKt.toIntOrNull:(Ljava/lang/String;)Ljava/lang/Integer;
+     427: dup
+     428: ifnull        437
+     431: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     434: goto          440
+     437: pop
+     438: aconst_null
+     439: areturn
+     440: istore        4
+     442: aload_3
+     443: iconst_1
+     444: invokeinterface #838,  2          // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+     449: checkcast     #294                // class java/lang/String
+     452: invokestatic  #831                // Method kotlin/text/StringsKt.toIntOrNull:(Ljava/lang/String;)Ljava/lang/Integer;
+     455: dup
+     456: ifnull        465
+     459: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     462: goto          468
+     465: pop
+     466: aconst_null
+     467: areturn
+     468: istore        5
+     470: aload_3
+     471: iconst_2
+     472: invokeinterface #838,  2          // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+     477: checkcast     #294                // class java/lang/String
+     480: invokestatic  #831                // Method kotlin/text/StringsKt.toIntOrNull:(Ljava/lang/String;)Ljava/lang/Integer;
+     483: dup
+     484: ifnull        493
+     487: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     490: goto          496
+     493: pop
+     494: aconst_null
+     495: areturn
+     496: istore        6
+     498: iload         4
+     500: sipush        3600
+     503: imul
+     504: iload         5
+     506: bipush        60
+     508: imul
+     509: iadd
+     510: iload         6
+     512: iadd
+     513: invokestatic  #795                // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+     516: areturn
+
+  private static final com.example.project3.ChromeCaptureStore chromeCaptureStore_delegate$lambda$0(com.example.project3.MainActivity);
+    Code:
+       0: new           #133                // class com/example/project3/ChromeCaptureStore
+       3: dup
+       4: aload_0
+       5: checkcast     #386                // class android/content/Context
+       8: invokespecial #851                // Method com/example/project3/ChromeCaptureStore."<init>":(Landroid/content/Context;)V
+      11: areturn
+
+  private static final com.example.project3.YoutubeDirectUrlExtractor extractor_delegate$lambda$1(com.example.project3.MainActivity);
+    Code:
+       0: new           #136                // class com/example/project3/YoutubeDirectUrlExtractor
+       3: dup
+       4: aload_0
+       5: checkcast     #386                // class android/content/Context
+       8: invokespecial #853                // Method com/example/project3/YoutubeDirectUrlExtractor."<init>":(Landroid/content/Context;)V
+      11: areturn
+
+  private static final com.example.project3.AudioSegmentDownloader segmentDownloader_delegate$lambda$2(com.example.project3.MainActivity);
+    Code:
+       0: new           #139                // class com/example/project3/AudioSegmentDownloader
+       3: dup
+       4: aload_0
+       5: checkcast     #386                // class android/content/Context
+       8: invokespecial #854                // Method com/example/project3/AudioSegmentDownloader."<init>":(Landroid/content/Context;)V
+      11: areturn
+
+  private static final com.example.project3.WhisperApiClient whisperApiClient_delegate$lambda$3();
+    Code:
+       0: new           #142                // class com/example/project3/WhisperApiClient
+       3: dup
+       4: invokespecial #855                // Method com/example/project3/WhisperApiClient."<init>":()V
+       7: areturn
+
+  private static final com.example.project3.SentenceAssembler sentenceAssembler_delegate$lambda$4();
+    Code:
+       0: new           #145                // class com/example/project3/SentenceAssembler
+       3: dup
+       4: invokespecial #856                // Method com/example/project3/SentenceAssembler."<init>":()V
+       7: areturn
+
+  private static final android.content.SharedPreferences prefs_delegate$lambda$5(com.example.project3.MainActivity);
+    Code:
+       0: aload_0
+       1: ldc_w         #858                // String project3_prefs
+       4: iconst_0
+       5: invokevirtual #862                // Method getSharedPreferences:(Ljava/lang/String;I)Landroid/content/SharedPreferences;
+       8: areturn
+
+  private static final void onCreate$lambda$6(com.example.project3.MainActivity, android.view.View);
+    Code:
+       0: aload_0
+       1: new           #332                // class android/content/Intent
+       4: dup
+       5: ldc_w         #864                // String android.settings.ACCESSIBILITY_SETTINGS
+       8: invokespecial #866                // Method android/content/Intent."<init>":(Ljava/lang/String;)V
+      11: invokevirtual #869                // Method startActivity:(Landroid/content/Intent;)V
+      14: return
+
+  private static final void onCreate$lambda$7(com.example.project3.MainActivity, android.view.View);
+    Code:
+       0: aload_0
+       1: invokespecial #872                // Method startDownloadFlow:()V
+       4: return
+
+  private static final void startDownloadFlow$lambda$18$lambda$11(com.example.project3.MainActivity);
+    Code:
+       0: aload_0
+       1: getfield      #190                // Field statusText:Landroid/widget/TextView;
+       4: dup
+       5: ifnonnull     16
+       8: pop
+       9: ldc_w         #427                // String statusText
+      12: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      15: aconst_null
+      16: aload_0
+      17: getstatic     #876                // Field com/example/project3/R$string.status_stage_downloading:I
+      20: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+      23: checkcast     #251                // class java/lang/CharSequence
+      26: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+      29: return
+
+  private static final void startDownloadFlow$lambda$18$lambda$12(com.example.project3.MainActivity);
+    Code:
+       0: aload_0
+       1: getfield      #190                // Field statusText:Landroid/widget/TextView;
+       4: dup
+       5: ifnonnull     16
+       8: pop
+       9: ldc_w         #427                // String statusText
+      12: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      15: aconst_null
+      16: aload_0
+      17: getstatic     #880                // Field com/example/project3/R$string.status_stage_finalizing:I
+      20: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+      23: checkcast     #251                // class java/lang/CharSequence
+      26: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+      29: return
+
+  private static final void startDownloadFlow$lambda$18$lambda$13(com.example.project3.MainActivity);
+    Code:
+       0: aload_0
+       1: getfield      #190                // Field statusText:Landroid/widget/TextView;
+       4: dup
+       5: ifnonnull     16
+       8: pop
+       9: ldc_w         #427                // String statusText
+      12: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      15: aconst_null
+      16: aload_0
+      17: getstatic     #884                // Field com/example/project3/R$string.status_stage_stt_uploading:I
+      20: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+      23: checkcast     #251                // class java/lang/CharSequence
+      26: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+      29: return
+
+  private static final void startDownloadFlow$lambda$18$lambda$15(com.example.project3.MainActivity);
+    Code:
+       0: aload_0
+       1: getfield      #190                // Field statusText:Landroid/widget/TextView;
+       4: dup
+       5: ifnonnull     16
+       8: pop
+       9: ldc_w         #427                // String statusText
+      12: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      15: aconst_null
+      16: aload_0
+      17: getstatic     #888                // Field com/example/project3/R$string.status_stage_stt_processing:I
+      20: invokevirtual #435                // Method getString:(I)Ljava/lang/String;
+      23: checkcast     #251                // class java/lang/CharSequence
+      26: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+      29: return
+
+  private static final void startDownloadFlow$lambda$18$lambda$16(com.example.project3.MainActivity, java.util.List, java.io.File, java.lang.String);
+    Code:
+       0: aload_0
+       1: getfield      #190                // Field statusText:Landroid/widget/TextView;
+       4: dup
+       5: ifnonnull     16
+       8: pop
+       9: ldc_w         #427                // String statusText
+      12: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      15: aconst_null
+      16: aload_0
+      17: getstatic     #893                // Field com/example/project3/R$string.status_stage_stt_done:I
+      20: iconst_2
+      21: anewarray     #570                // class java/lang/Object
+      24: astore        4
+      26: aload         4
+      28: iconst_0
+      29: aload_1
+      30: invokeinterface #834,  1          // InterfaceMethod java/util/List.size:()I
+      35: invokestatic  #795                // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+      38: aastore
+      39: aload         4
+      41: iconst_1
+      42: aload_2
+      43: invokevirtual #896                // Method java/io/File.getName:()Ljava/lang/String;
+      46: aastore
+      47: aload         4
+      49: invokevirtual #899                // Method getString:(I[Ljava/lang/Object;)Ljava/lang/String;
+      52: checkcast     #251                // class java/lang/CharSequence
+      55: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+      58: aload_0
+      59: getfield      #234                // Field sttResultText:Landroid/widget/TextView;
+      62: dup
+      63: ifnonnull     74
+      66: pop
+      67: ldc_w         #628                // String sttResultText
+      70: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      73: aconst_null
+      74: aload_3
+      75: checkcast     #251                // class java/lang/CharSequence
+      78: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+      81: aload_0
+      82: iconst_0
+      83: putfield      #426                // Field isDownloading:Z
+      86: aload_0
+      87: getfield      #221                // Field downloadButton:Landroid/widget/Button;
+      90: dup
+      91: ifnonnull     102
+      94: pop
+      95: ldc_w         #272                // String downloadButton
+      98: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     101: aconst_null
+     102: iconst_1
+     103: invokevirtual #620                // Method android/widget/Button.setEnabled:(Z)V
+     106: aload_0
+     107: getfield      #229                // Field downloadProgress:Landroid/widget/ProgressBar;
+     110: dup
+     111: ifnonnull     122
+     114: pop
+     115: ldc_w         #621                // String downloadProgress
+     118: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+     121: aconst_null
+     122: bipush        8
+     124: invokevirtual #624                // Method android/widget/ProgressBar.setVisibility:(I)V
+     127: return
+
+  private static final void startDownloadFlow$lambda$18$lambda$17(com.example.project3.MainActivity, java.lang.Throwable);
+    Code:
+       0: aload_0
+       1: getfield      #190                // Field statusText:Landroid/widget/TextView;
+       4: dup
+       5: ifnonnull     16
+       8: pop
+       9: ldc_w         #427                // String statusText
+      12: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      15: aconst_null
+      16: aload_0
+      17: getstatic     #910                // Field com/example/project3/R$string.status_stage_failed:I
+      20: iconst_1
+      21: anewarray     #570                // class java/lang/Object
+      24: astore_2
+      25: aload_2
+      26: iconst_0
+      27: aload_1
+      28: invokevirtual #915                // Method java/lang/Throwable.getMessage:()Ljava/lang/String;
+      31: dup
+      32: ifnonnull     43
+      35: pop
+      36: aload_1
+      37: invokevirtual #919                // Method java/lang/Object.getClass:()Ljava/lang/Class;
+      40: invokevirtual #922                // Method java/lang/Class.getSimpleName:()Ljava/lang/String;
+      43: aastore
+      44: aload_2
+      45: invokevirtual #899                // Method getString:(I[Ljava/lang/Object;)Ljava/lang/String;
+      48: checkcast     #251                // class java/lang/CharSequence
+      51: invokevirtual #422                // Method android/widget/TextView.setText:(Ljava/lang/CharSequence;)V
+      54: aload_0
+      55: iconst_0
+      56: putfield      #426                // Field isDownloading:Z
+      59: aload_0
+      60: getfield      #221                // Field downloadButton:Landroid/widget/Button;
+      63: dup
+      64: ifnonnull     75
+      67: pop
+      68: ldc_w         #272                // String downloadButton
+      71: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      74: aconst_null
+      75: iconst_1
+      76: invokevirtual #620                // Method android/widget/Button.setEnabled:(Z)V
+      79: aload_0
+      80: getfield      #229                // Field downloadProgress:Landroid/widget/ProgressBar;
+      83: dup
+      84: ifnonnull     95
+      87: pop
+      88: ldc_w         #621                // String downloadProgress
+      91: invokestatic  #239                // Method kotlin/jvm/internal/Intrinsics.throwUninitializedPropertyAccessException:(Ljava/lang/String;)V
+      94: aconst_null
+      95: bipush        8
+      97: invokevirtual #624                // Method android/widget/ProgressBar.setVisibility:(I)V
+     100: return
+
+  private static final void startDownloadFlow$lambda$18(com.example.project3.MainActivity, java.lang.String, java.lang.Integer, java.lang.Integer, java.lang.String);
+    Code:
+       0: nop
+       1: aload_0
+       2: invokespecial #926                // Method getExtractor:()Lcom/example/project3/YoutubeDirectUrlExtractor;
+       5: aload_1
+       6: invokevirtual #930                // Method com/example/project3/YoutubeDirectUrlExtractor.downloadToLocal:(Ljava/lang/String;)Lcom/example/project3/DownloadedAudioSource;
+       9: astore        5
+      11: aload_0
+      12: getfield      #14                 // Field tag:Ljava/lang/String;
+      15: aload         5
+      17: invokevirtual #935                // Method com/example/project3/DownloadedAudioSource.getFromCache:()Z
+      20: aload         5
+      22: invokevirtual #938                // Method com/example/project3/DownloadedAudioSource.getCacheAgeSec:()I
+      25: aload         5
+      27: invokevirtual #941                // Method com/example/project3/DownloadedAudioSource.getLiveStatus:()Ljava/lang/String;
+      30: dup
+      31: ifnonnull     38
+      34: pop
+      35: ldc_w         #943                // String unknown
+      38: aload         5
+      40: invokevirtual #946                // Method com/example/project3/DownloadedAudioSource.getLocalPath:()Ljava/lang/String;
+      43: invokedynamic #951,  0            // InvokeDynamic #14:makeConcatWithConstants:(ZILjava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+      48: invokestatic  #956                // Method android/util/Log.i:(Ljava/lang/String;Ljava/lang/String;)I
+      51: pop
+      52: aload_0
+      53: aload_0
+      54: invokedynamic #962,  0            // InvokeDynamic #15:run:(Lcom/example/project3/MainActivity;)Ljava/lang/Runnable;
+      59: invokevirtual #965                // Method runOnUiThread:(Ljava/lang/Runnable;)V
+      62: aload_0
+      63: invokespecial #967                // Method getSegmentDownloader:()Lcom/example/project3/AudioSegmentDownloader;
+      66: aload         5
+      68: invokevirtual #946                // Method com/example/project3/DownloadedAudioSource.getLocalPath:()Ljava/lang/String;
+      71: aload_2
+      72: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+      75: aload_3
+      76: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+      79: invokevirtual #971                // Method com/example/project3/AudioSegmentDownloader.cutSegmentFromLocal:(Ljava/lang/String;II)Ljava/io/File;
+      82: astore        6
+      84: aload_0
+      85: aload_0
+      86: invokedynamic #975,  0            // InvokeDynamic #16:run:(Lcom/example/project3/MainActivity;)Ljava/lang/Runnable;
+      91: invokevirtual #965                // Method runOnUiThread:(Ljava/lang/Runnable;)V
+      94: aload_0
+      95: aload_0
+      96: invokedynamic #979,  0            // InvokeDynamic #17:run:(Lcom/example/project3/MainActivity;)Ljava/lang/Runnable;
+     101: invokevirtual #965                // Method runOnUiThread:(Ljava/lang/Runnable;)V
+     104: aload_0
+     105: invokespecial #981                // Method getWhisperApiClient:()Lcom/example/project3/WhisperApiClient;
+     108: aload         6
+     110: aload         4
+     112: invokevirtual #985                // Method com/example/project3/WhisperApiClient."transcribeVerboseEnglish-gIAlu-s":(Ljava/io/File;Ljava/lang/String;)Ljava/lang/Object;
+     115: astore        8
+     117: aload         8
+     119: invokestatic  #991                // Method kotlin/Result."exceptionOrNull-impl":(Ljava/lang/Object;)Ljava/lang/Throwable;
+     122: dup
+     123: ifnonnull     132
+     126: pop
+     127: aload         8
+     129: goto          140
+     132: astore        9
+     134: iconst_0
+     135: istore        10
+     137: aload         9
+     139: athrow
+     140: checkcast     #664                // class com/example/project3/WhisperVerboseResult
+     143: astore        7
+     145: aload_0
+     146: aload         7
+     148: aload_2
+     149: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     152: i2d
+     153: invokespecial #993                // Method offsetTranscript:(Lcom/example/project3/WhisperVerboseResult;D)Lcom/example/project3/WhisperVerboseResult;
+     156: astore        8
+     158: aload_0
+     159: aload_0
+     160: invokedynamic #997,  0            // InvokeDynamic #18:run:(Lcom/example/project3/MainActivity;)Ljava/lang/Runnable;
+     165: invokevirtual #965                // Method runOnUiThread:(Ljava/lang/Runnable;)V
+     168: aload_0
+     169: invokespecial #999                // Method getSentenceAssembler:()Lcom/example/project3/SentenceAssembler;
+     172: aload         8
+     174: invokestatic  #1003               // Method kotlin/collections/CollectionsKt.listOf:(Ljava/lang/Object;)Ljava/util/List;
+     177: aload_2
+     178: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     181: aload_3
+     182: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     185: invokevirtual #1007               // Method com/example/project3/SentenceAssembler.build:(Ljava/util/List;II)Ljava/util/List;
+     188: astore        9
+     190: aload_0
+     191: aload         9
+     193: aload         8
+     195: aload_2
+     196: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     199: aload_3
+     200: invokevirtual #597                // Method java/lang/Integer.intValue:()I
+     203: invokespecial #1009               // Method renderSentenceResult:(Ljava/util/List;Lcom/example/project3/WhisperVerboseResult;II)Ljava/lang/String;
+     206: astore        10
+     208: aload_0
+     209: aload_0
+     210: aload         9
+     212: aload         6
+     214: aload         10
+     216: invokedynamic #1015,  0           // InvokeDynamic #19:run:(Lcom/example/project3/MainActivity;Ljava/util/List;Ljava/io/File;Ljava/lang/String;)Ljava/lang/Runnable;
+     221: invokevirtual #965                // Method runOnUiThread:(Ljava/lang/Runnable;)V
+     224: goto          241
+     227: astore        5
+     229: aload_0
+     230: aload_0
+     231: aload         5
+     233: invokedynamic #1021,  0           // InvokeDynamic #20:run:(Lcom/example/project3/MainActivity;Ljava/lang/Throwable;)Ljava/lang/Runnable;
+     238: invokevirtual #965                // Method runOnUiThread:(Ljava/lang/Runnable;)V
+     241: return
+    Exception table:
+       from    to  target type
+           0   224   227   Class java/lang/Throwable
+
+  private static final java.lang.CharSequence renderSentenceResult$lambda$19(com.example.project3.MainActivity, com.example.project3.WhisperSegment);
+    Code:
+       0: aload_1
+       1: ldc_w         #1033               // String segment
+       4: invokestatic  #301                // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+       7: aload_0
+       8: aload_1
+       9: invokevirtual #734                // Method com/example/project3/WhisperSegment.getStart:()D
+      12: invokespecial #697                // Method formatSec:(D)Ljava/lang/String;
+      15: aload_0
+      16: aload_1
+      17: invokevirtual #737                // Method com/example/project3/WhisperSegment.getEnd:()D
+      20: invokespecial #697                // Method formatSec:(D)Ljava/lang/String;
+      23: aload_1
+      24: invokevirtual #739                // Method com/example/project3/WhisperSegment.getText:()Ljava/lang/String;
+      27: checkcast     #251                // class java/lang/CharSequence
+      30: invokestatic  #589                // Method kotlin/text/StringsKt.trim:(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;
+      33: invokevirtual #580                // Method java/lang/Object.toString:()Ljava/lang/String;
+      36: invokedynamic #702,  0            // InvokeDynamic #12:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+      41: checkcast     #251                // class java/lang/CharSequence
+      44: areturn
+
+  private static final java.lang.CharSequence renderSentenceResult$lambda$21(com.example.project3.MainActivity, com.example.project3.SentenceTimestamp);
+    Code:
+       0: aload_1
+       1: ldc_w         #1035               // String sentence
+       4: invokestatic  #301                // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+       7: aload_0
+       8: aload_1
+       9: invokevirtual #1040               // Method com/example/project3/SentenceTimestamp.getStartSec:()D
+      12: invokespecial #697                // Method formatSec:(D)Ljava/lang/String;
+      15: aload_0
+      16: aload_1
+      17: invokevirtual #1043               // Method com/example/project3/SentenceTimestamp.getEndSec:()D
+      20: invokespecial #697                // Method formatSec:(D)Ljava/lang/String;
+      23: aload_1
+      24: invokevirtual #1044               // Method com/example/project3/SentenceTimestamp.getText:()Ljava/lang/String;
+      27: checkcast     #251                // class java/lang/CharSequence
+      30: invokestatic  #589                // Method kotlin/text/StringsKt.trim:(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;
+      33: invokevirtual #580                // Method java/lang/Object.toString:()Ljava/lang/String;
+      36: invokedynamic #702,  0            // InvokeDynamic #12:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+      41: checkcast     #251                // class java/lang/CharSequence
+      44: areturn
+
+  public static final void access$refreshChromeConnection(com.example.project3.MainActivity);
+    Code:
+       0: aload_0
+       1: invokespecial #288                // Method refreshChromeConnection:()V
+       4: return
+
+  public static final android.os.Handler access$getMainHandler$p(com.example.project3.MainActivity);
+    Code:
+       0: aload_0
+       1: getfield      #114                // Field mainHandler:Landroid/os/Handler;
+       4: areturn
+
+  static {};
+    Code:
+       0: new           #1052               // class com/example/project3/MainActivity$Companion
+       3: dup
+       4: aconst_null
+       5: invokespecial #1055               // Method com/example/project3/MainActivity$Companion."<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+       8: putstatic     #1059               // Field Companion:Lcom/example/project3/MainActivity$Companion;
+      11: return
+}

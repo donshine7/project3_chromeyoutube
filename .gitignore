@@ -1,0 +1,10 @@
+.gradle/
+.kotlin/
+app/build/
+*.apk
+*.aab
+*.log
+latest-*.log
+latest-*.txt
+analysis-logcat-focus.txt
+local.properties
