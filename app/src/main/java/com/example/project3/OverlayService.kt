@@ -65,6 +65,7 @@ class OverlayService : Service() {
     private var repeatSession: RepeatSession? = null
     private var repeatCancelled = false
     private var activeSentenceKey: String? = null
+    private var expandedSentenceKey: String? = null
 
     private enum class RepeatState { SEEKING, WAITING_FOR_PLAY, PLAYING, RESTARTING, FAILED }
 
@@ -201,7 +202,10 @@ class OverlayService : Service() {
             x = (display.widthPixels - overlayWidth - edgeMargin).coerceAtLeast(0)
             y = (display.heightPixels - overlayHeight - edgeMargin - bottomSafeOffset).coerceAtLeast(0)
         }
-        title.setOnTouchListener(createDragTouchListener(root))
+        val dragTouchListener = createDragTouchListener(root)
+        root.setOnTouchListener(dragTouchListener)
+        title.setOnTouchListener(dragTouchListener)
+        statusTextView?.setOnTouchListener(dragTouchListener)
         wm.addView(root, params)
         windowManager = wm
         overlayView = root
@@ -343,20 +347,30 @@ class OverlayService : Service() {
                     container.addView(makeHintText("No sentences in folder."))
                 } else {
                     sentences.forEach { sentence ->
+                        val sentenceKey = sentenceUiKey(sentence)
+                        val expanded = expandedSentenceKey == sentenceKey
                         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
                         val playBtn = Button(this).apply {
                             isAllCaps = false
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
                             text = "[${fmtSec(sentence.startSec)}-${fmtSec(sentence.endSec)}] ${sentence.text}"
                             isSingleLine = false
-                            maxLines = 2
-                            ellipsize = TextUtils.TruncateAt.END
-                            setOnClickListener { playSentenceRepeat(folder, sentence, repeatCount = 5) }
+                            if (expanded) {
+                                maxLines = Int.MAX_VALUE
+                                ellipsize = null
+                            } else {
+                                maxLines = 2
+                                ellipsize = TextUtils.TruncateAt.END
+                            }
+                            setOnClickListener { onSentenceButtonClicked(folder, sentence) }
                         }
                         val delBtn = Button(this).apply {
                             text = "Delete"
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
                             setOnClickListener {
+                                if (expandedSentenceKey == sentenceKey) {
+                                    expandedSentenceKey = null
+                                }
                                 sentenceStore.deleteSentence(folder, sentence)
                                 refreshSentenceButtons()
                             }
@@ -371,15 +385,29 @@ class OverlayService : Service() {
         updateFolderNavUi()
     }
 
+    private fun sentenceUiKey(sentence: SentenceTimestamp): String =
+        "${sentence.startSec}|${sentence.endSec}|${sentence.text}"
+
+    private fun onSentenceButtonClicked(folder: SentenceTimestampStore.FolderEntry, sentence: SentenceTimestamp) {
+        val sentenceKey = sentenceUiKey(sentence)
+        if (expandedSentenceKey == sentenceKey) {
+            expandedSentenceKey = null
+            if (activeSentenceKey == sentenceKey && repeatSession != null) {
+                repeatCancelled = true
+                finalizeRepeat(cancelled = true)
+            }
+            refreshSentenceButtons()
+            return
+        }
+        expandedSentenceKey = sentenceKey
+        refreshSentenceButtons()
+        playSentenceRepeat(folder, sentence, repeatCount = 5)
+    }
+
     private fun playSentenceRepeat(folder: SentenceTimestampStore.FolderEntry, sentence: SentenceTimestamp, repeatCount: Int) {
         val folderUrl = sentenceStore.loadYoutubeUrl(folder) ?: return
         val folderVideoId = YoutubeUrlParser.extractVideoId(folderUrl) ?: return
-        val sentenceKey = "${sentence.startSec}|${sentence.endSec}|${sentence.text}"
-        if (activeSentenceKey == sentenceKey && repeatSession != null) {
-            repeatCancelled = true
-            finalizeRepeat(cancelled = true)
-            return
-        }
+        val sentenceKey = sentenceUiKey(sentence)
         repeatCancelled = false
         activeSentenceKey = sentenceKey
         val currentVideoId = resolveCurrentVideoId()
