@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.GradientDrawable
 import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.Build
@@ -52,6 +53,7 @@ class OverlayService : Service() {
     private val whisperClient by lazy { WhisperApiClient() }
     private val sentenceAssembler by lazy { SentenceAssembler() }
     private val sentenceStore by lazy { SentenceTimestampStore(this) }
+    private val sentenceTranslationClient by lazy { SentenceTranslationClient() }
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val repeatHandler by lazy { Handler(Looper.getMainLooper()) }
 
@@ -69,6 +71,8 @@ class OverlayService : Service() {
     private var repeatCancelled = false
     private var activeSentenceKey: String? = null
     private var expandedSentenceKey: String? = null
+    private val showKoreanKeys = mutableSetOf<String>()
+    private val translationLoadingKeys = mutableSetOf<String>()
     private var pendingAutoRange: Pair<Int, Int>? = null
 
     private enum class RepeatState { SEEKING, WAITING_FOR_PLAY, PLAYING, RESTARTING, FAILED }
@@ -402,11 +406,31 @@ class OverlayService : Service() {
                         val sentenceKey = sentenceUiKey(sentence)
                         val expanded = expandedSentenceKey == sentenceKey
                         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                        val playBtn = Button(this).apply {
+                        val leftColor = when {
+                            translationLoadingKeys.contains(sentenceKey) -> 0xFF455A64.toInt()
+                            showKoreanKeys.contains(sentenceKey) -> 0xFF2E7D32.toInt()
+                            else -> 0xFF1565C0.toInt()
+                        }
+                        val rightColor = if (activeSentenceKey == sentenceKey && repeatSession != null) {
+                            0xFFEF6C00.toInt()
+                        } else {
+                            0xFF6A1B9A.toInt()
+                        }
+                        val displayText = if (showKoreanKeys.contains(sentenceKey) && !sentence.translatedTextKo.isNullOrBlank()) {
+                            sentence.translatedTextKo
+                        } else {
+                            sentence.text
+                        }.orEmpty()
+                        val splitBtn = Button(this).apply {
                             isAllCaps = false
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
-                            text = "[${fmtSec(sentence.startSec)}-${fmtSec(sentence.endSec)}] ${sentence.text}"
+                            text = "[${fmtSec(sentence.startSec)}-${fmtSec(sentence.endSec)}] $displayText"
+                            setTextColor(0xFFFFFFFF.toInt())
                             isSingleLine = false
+                            background = GradientDrawable(
+                                GradientDrawable.Orientation.LEFT_RIGHT,
+                                intArrayOf(leftColor, leftColor, rightColor, rightColor)
+                            ).apply { cornerRadius = dp(6).toFloat() }
                             if (expanded) {
                                 maxLines = Int.MAX_VALUE
                                 ellipsize = null
@@ -414,7 +438,17 @@ class OverlayService : Service() {
                                 maxLines = 2
                                 ellipsize = TextUtils.TruncateAt.END
                             }
-                            setOnClickListener { onSentenceButtonClicked(folder, sentence) }
+                            setOnTouchListener { v, event ->
+                                if (event.action == MotionEvent.ACTION_UP) {
+                                    val splitX = v.width / 2f
+                                    if (event.x <= splitX) {
+                                        onSentenceTranslateClicked(folder, sentence)
+                                    } else {
+                                        onSentenceButtonClicked(folder, sentence)
+                                    }
+                                }
+                                true
+                            }
                         }
                         val delBtn = Button(this).apply {
                             text = "Delete"
@@ -423,11 +457,13 @@ class OverlayService : Service() {
                                 if (expandedSentenceKey == sentenceKey) {
                                     expandedSentenceKey = null
                                 }
+                                showKoreanKeys.remove(sentenceKey)
+                                translationLoadingKeys.remove(sentenceKey)
                                 sentenceStore.deleteSentence(folder, sentence)
                                 refreshSentenceButtons()
                             }
                         }
-                        row.addView(playBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                        row.addView(splitBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                         row.addView(delBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
                         container.addView(row)
                     }
@@ -442,7 +478,8 @@ class OverlayService : Service() {
 
     private fun onSentenceButtonClicked(folder: SentenceTimestampStore.FolderEntry, sentence: SentenceTimestamp) {
         val sentenceKey = sentenceUiKey(sentence)
-        if (expandedSentenceKey == sentenceKey) {
+        val isEnglishExpanded = expandedSentenceKey == sentenceKey && !showKoreanKeys.contains(sentenceKey)
+        if (isEnglishExpanded) {
             expandedSentenceKey = null
             if (activeSentenceKey == sentenceKey && repeatSession != null) {
                 repeatCancelled = true
@@ -451,9 +488,68 @@ class OverlayService : Service() {
             refreshSentenceButtons()
             return
         }
+        showKoreanKeys.remove(sentenceKey)
         expandedSentenceKey = sentenceKey
         refreshSentenceButtons()
         playSentenceRepeat(folder, sentence, repeatCount = 5)
+    }
+
+    private fun onSentenceTranslateClicked(folder: SentenceTimestampStore.FolderEntry, sentence: SentenceTimestamp) {
+        val sentenceKey = sentenceUiKey(sentence)
+        val isKoreanExpanded = expandedSentenceKey == sentenceKey && showKoreanKeys.contains(sentenceKey)
+        if (isKoreanExpanded) {
+            expandedSentenceKey = null
+            showKoreanKeys.remove(sentenceKey)
+            if (activeSentenceKey == sentenceKey && repeatSession != null) {
+                repeatCancelled = true
+                finalizeRepeat(cancelled = true)
+            }
+            refreshSentenceButtons()
+            return
+        }
+        expandedSentenceKey = sentenceKey
+        showKoreanKeys.add(sentenceKey)
+        if (!sentence.translatedTextKo.isNullOrBlank()) {
+            refreshSentenceButtons()
+            return
+        }
+        if (translationLoadingKeys.contains(sentenceKey)) {
+            refreshSentenceButtons()
+            return
+        }
+        val apiKey = prefs.getString(KEY_API_KEY, null)?.takeIf { it.isNotBlank() }
+        if (apiKey.isNullOrBlank()) {
+            statusTextView?.text = "API key is required for translation."
+            refreshSentenceButtons()
+            return
+        }
+        translationLoadingKeys.add(sentenceKey)
+        refreshSentenceButtons()
+        statusTextView?.text = "Translating sentence..."
+        thread(name = "overlay-translate") {
+            sentenceTranslationClient.translateEnglishToKorean(sentence.text, apiKey)
+                .onSuccess { translated ->
+                    val cleaned = translated.trim()
+                    if (cleaned.isNotBlank()) {
+                        sentenceStore.updateSentenceTranslation(folder, sentence, cleaned)
+                        mainHandler.post {
+                            statusTextView?.text = "Translation saved."
+                            refreshSentenceButtons()
+                        }
+                    } else {
+                        mainHandler.post { statusTextView?.text = "Translation empty." }
+                    }
+                }
+                .onFailure { err ->
+                    mainHandler.post {
+                        statusTextView?.text = "Translation failed: ${err.message ?: "unknown error"}"
+                    }
+                }
+            mainHandler.post {
+                translationLoadingKeys.remove(sentenceKey)
+                refreshSentenceButtons()
+            }
+        }
     }
 
     private fun playSentenceRepeat(folder: SentenceTimestampStore.FolderEntry, sentence: SentenceTimestamp, repeatCount: Int) {
@@ -690,6 +786,8 @@ class OverlayService : Service() {
 
     private fun resetAllState() {
         expandedSentenceKey = null
+        showKoreanKeys.clear()
+        translationLoadingKeys.clear()
         if (repeatSession != null) {
             repeatCancelled = true
             finalizeRepeat(cancelled = true)

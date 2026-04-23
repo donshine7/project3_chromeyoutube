@@ -35,6 +35,9 @@ class SentenceTimestampStore(context: Context) {
                         put("startSec", s.startSec)
                         put("endSec", s.endSec)
                         put("text", s.text)
+                        if (!s.translatedTextKo.isNullOrBlank()) {
+                            put("translatedTextKo", s.translatedTextKo)
+                        }
                     })
                 }
             })
@@ -63,7 +66,8 @@ class SentenceTimestampStore(context: Context) {
                         SentenceTimestamp(
                             startSec = item.optDouble("startSec", 0.0),
                             endSec = item.optDouble("endSec", 0.0),
-                            text = item.optString("text", "")
+                            text = item.optString("text", ""),
+                            translatedTextKo = item.optString("translatedTextKo").ifBlank { null }
                         )
                     )
                 }
@@ -90,6 +94,9 @@ class SentenceTimestampStore(context: Context) {
                     put("startSec", s.startSec)
                     put("endSec", s.endSec)
                     put("text", s.text)
+                    if (!s.translatedTextKo.isNullOrBlank()) {
+                        put("translatedTextKo", s.translatedTextKo)
+                    }
                 })
             }
         })
@@ -118,12 +125,34 @@ class SentenceTimestampStore(context: Context) {
                         SentenceTimestamp(
                             startSec = item.optDouble("startSec", 0.0),
                             endSec = item.optDouble("endSec", 0.0),
-                            text = item.optString("text", "")
+                            text = item.optString("text", ""),
+                            translatedTextKo = item.optString("translatedTextKo").ifBlank { null }
                         )
                     )
                 }
             }
         }.getOrElse { emptyList() }
+    }
+
+    fun updateSentenceTranslation(folder: FolderEntry, target: SentenceTimestamp, translatedKo: String): Boolean {
+        val latest = latestJson(folder.path) ?: return false
+        val rootJson = runCatching { JSONObject(latest.readText()) }.getOrElse { return false }
+        val arr = rootJson.optJSONArray("sentences") ?: return false
+        var changed = false
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val startSec = item.optDouble("startSec", Double.NaN)
+            val endSec = item.optDouble("endSec", Double.NaN)
+            val text = item.optString("text", "")
+            if (startSec == target.startSec && endSec == target.endSec && text == target.text) {
+                item.put("translatedTextKo", translatedKo)
+                changed = true
+                break
+            }
+        }
+        if (!changed) return false
+        latest.writeText(rootJson.toString(2))
+        return true
     }
 
     private fun resolveContentDir(dateDir: File, canonicalUrl: String, videoId: String, now: Date): File {
