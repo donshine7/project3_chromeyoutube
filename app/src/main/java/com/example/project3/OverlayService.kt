@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Browser
 import android.text.TextUtils
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -26,10 +27,12 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import java.io.File
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
 class OverlayService : Service() {
+    private val tag = "OverlayService"
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var overlayParams: WindowManager.LayoutParams? = null
@@ -295,9 +298,31 @@ class OverlayService : Service() {
         statusTextView?.text = "Downloading with yt-dlp..."
         thread(name = "overlay-stt") {
             runCatching {
-                val localSource = extractor.downloadToLocal(sourceUrl)
+                var localSource = extractor.downloadToLocal(sourceUrl)
+                Log.i(
+                    tag,
+                    "finalSource fromCache=${if (localSource.fromCache) 1 else 0} " +
+                        "forceDownload=0 path=${localSource.path}"
+                )
                 mainHandler.post { statusTextView?.text = "Cutting audio segment..." }
-                val segmentFile = segmentDownloader.cutSegmentFromLocal(localSource.path, startSec, endSec)
+                val segmentFile = runCatching {
+                    segmentDownloader.cutSegmentFromLocal(localSource.path, startSec, endSec)
+                }.recoverCatching { firstErr ->
+                    if (!shouldFallbackRedownload(localSource, firstErr)) throw firstErr
+                    Log.w(
+                        tag,
+                        "fallbackRedownloadTriggered reason=${summarizeError(firstErr)} " +
+                            "path=${localSource.path}"
+                    )
+                    mainHandler.post { statusTextView?.text = "Retrying download without cache..." }
+                    localSource = extractor.downloadToLocal(sourceUrl, forceDownload = true)
+                    Log.i(
+                        tag,
+                        "finalSource fromCache=${if (localSource.fromCache) 1 else 0} " +
+                            "forceDownload=1 path=${localSource.path}"
+                    )
+                    segmentDownloader.cutSegmentFromLocal(localSource.path, startSec, endSec)
+                }.getOrThrow()
                 mainHandler.post { statusTextView?.text = "Uploading to Whisper..." }
                 val transcript = whisperClient.transcribeVerboseEnglish(apiKey, segmentFile)
                 val shifted = offsetTranscript(transcript, startSec)
@@ -312,8 +337,10 @@ class OverlayService : Service() {
                 }
             }.onFailure { err ->
                 mainHandler.post {
-                    statusTextView?.text = "STT failed: ${err.message ?: "unknown error"}"
+                    val detail = summarizeError(err)
+                    statusTextView?.text = "STT failed: $detail"
                 }
+                Log.e(tag, "runStt failed", err)
             }
             pipelineRunning = false
         }
@@ -757,6 +784,33 @@ class OverlayService : Service() {
         val min = totalSec / 60
         val s = totalSec % 60
         return String.format("%02d:%02d.%d", min, s, tenths)
+    }
+
+    private fun summarizeError(err: Throwable): String {
+        val root = generateSequence(err) { it.cause }.last()
+        val type = root.javaClass.simpleName.ifBlank { "Error" }
+        val message = root.message?.trim().orEmpty().replace("\n", " ")
+        val detail = if (message.isBlank()) "no message" else message
+        return "$type: ${detail.take(220)}"
+    }
+
+    private fun shouldFallbackRedownload(source: DownloadedAudioSource, err: Throwable): Boolean {
+        if (!source.fromCache) return false
+        if (!isLikelyInvalidLocalSourcePath(source.path)) return false
+        val rootMessage = generateSequence(err) { it.cause }.last().message?.lowercase().orEmpty()
+        return rootMessage.contains("invalid data found when processing input")
+            || rootMessage.contains("error opening input")
+            || rootMessage.contains("downloaded file validation failed")
+    }
+
+    private fun isLikelyInvalidLocalSourcePath(path: String): Boolean {
+        val lower = path.lowercase()
+        if (lower.endsWith(".ytdl") || lower.endsWith(".part") || lower.endsWith(".tmp")) return true
+        val file = File(path)
+        if (!file.exists()) return true
+        val extensionAllowed = setOf("webm", "m4a", "mp4", "opus", "ogg", "mp3", "wav", "mka")
+        if (file.extension.lowercase() !in extensionAllowed) return true
+        return file.length() < 1L * 1024L * 1024L
     }
 
     private fun buildNotification(): Notification {

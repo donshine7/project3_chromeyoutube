@@ -10,7 +10,11 @@ object YoutubeUrlParser {
         val direct = canonicalWatchUrl(extractVideoId(trimmed))
         if (direct != null) return direct
 
-        val fromText = Regex("""(https?://[^\s]+)""").find(trimmed)?.value
+        // Chrome accessibility text often omits scheme (e.g. youtube.com/watch?v=...).
+        val fromText = Regex(
+            """((?:https?://)?(?:www\.)?(?:m\.)?(?:youtube\.com|youtu\.be)/[^\s]+)""",
+            RegexOption.IGNORE_CASE
+        ).find(trimmed)?.value?.trimEnd('.', ',', ')', ']', '}', '>')
         return canonicalWatchUrl(extractVideoId(fromText))
     }
 
@@ -25,7 +29,8 @@ object YoutubeUrlParser {
 
     fun extractVideoId(rawUrl: String?): String? {
         if (rawUrl.isNullOrBlank()) return null
-        val uri = runCatching { Uri.parse(rawUrl.trim()) }.getOrNull() ?: return null
+        val candidate = rawUrl.trim()
+        val uri = parseYoutubeUri(candidate) ?: return null
         val host = uri.host?.lowercase().orEmpty()
 
         return when {
@@ -43,6 +48,20 @@ object YoutubeUrlParser {
             }
             else -> null
         }?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }
+    }
+
+    private fun parseYoutubeUri(raw: String): Uri? {
+        val direct = runCatching { Uri.parse(raw) }.getOrNull()
+        val directHost = direct?.host?.lowercase().orEmpty()
+        if (direct != null && (directHost.contains("youtube.com") || directHost.endsWith("youtu.be"))) {
+            return direct
+        }
+        val withScheme = runCatching {
+            if (raw.startsWith("http://", true) || raw.startsWith("https://", true)) Uri.parse(raw)
+            else Uri.parse("https://$raw")
+        }.getOrNull()
+        val host = withScheme?.host?.lowercase().orEmpty()
+        return withScheme?.takeIf { host.contains("youtube.com") || host.endsWith("youtu.be") }
     }
 
     fun extractSeconds(rawUrl: String?): Int {

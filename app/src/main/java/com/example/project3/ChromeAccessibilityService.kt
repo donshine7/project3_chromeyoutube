@@ -24,6 +24,12 @@ class ChromeAccessibilityService : AccessibilityService() {
             YoutubeUrlParser.normalizeUrl(text?.toString())
         }?.let { return it }
 
+        YoutubeUrlParser.normalizeUrl(event.contentDescription?.toString())?.let { return it }
+
+        event.source?.let { src ->
+            findUrlInNode(src)?.let { return it }
+        }
+
         val root = rootInActiveWindow ?: return null
         return findUrlInNode(root)
     }
