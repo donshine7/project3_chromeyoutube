@@ -74,6 +74,19 @@ class OverlayService : Service() {
     private val translationLoadingKeys = mutableSetOf<String>()
     private var pendingAutoRange: Pair<Int, Int>? = null
 
+    private data class SttChunk(
+        val transcribeStartSec: Int,
+        val transcribeEndSec: Int
+    )
+
+    private data class MergeSummary(
+        val result: WhisperVerboseResult,
+        val sourceSegmentCount: Int,
+        val dedupedSegmentCount: Int,
+        val sourceWordCount: Int,
+        val dedupedWordCount: Int
+    )
+
     private enum class RepeatState { SEEKING, WAITING_FOR_PLAY, PLAYING, RESTARTING, FAILED }
 
     private data class RepeatSession(
@@ -305,6 +318,15 @@ class OverlayService : Service() {
         }
         val transcribeStartSec = (startSec - padBeforeSec).coerceAtLeast(0)
         val transcribeEndSec = (endSec + padAfterSec).coerceAtLeast(transcribeStartSec + 1)
+        val isFastOnDevice = sttMode == SttEngineFactory.MODE_ON_DEVICE &&
+            onDeviceProfile == SttEngineFactory.ON_DEVICE_PROFILE_FAST
+        val requestedDurationSec = (endSec - startSec).coerceAtLeast(1)
+        val useChunking = isFastOnDevice && requestedDurationSec > FAST_CHUNK_MIN_REQUEST_SEC
+        val chunks = if (useChunking) {
+            buildFastChunks(startSec, endSec)
+        } else {
+            listOf(SttChunk(transcribeStartSec, transcribeEndSec))
+        }
         val sttEngine = SttEngineFactory.create(this, sttMode, onDeviceProfile)
         val apiKey = prefs.getString(KEY_API_KEY, null)?.takeIf { it.isNotBlank() }
         val sourceUrl = resolveCurrentSourceUrl()
@@ -331,50 +353,87 @@ class OverlayService : Service() {
                 )
                 mainHandler.post {
                     statusTextView?.text =
-                        "Cutting audio segment... (${transcribeStartSec}s-${transcribeEndSec}s, target ${startSec}s-${endSec}s)"
+                        "Preparing ${chunks.size} chunk(s)..."
                 }
                 val outputProfile = if (sttMode == SttEngineFactory.MODE_ON_DEVICE) {
                     AudioSegmentDownloader.OutputProfile.WAV_16K_MONO
                 } else {
                     AudioSegmentDownloader.OutputProfile.COMPRESSED_WEBM
                 }
-                val segmentFile = runCatching {
-                    segmentDownloader.cutSegmentFromLocal(
-                        localSource.path,
-                        transcribeStartSec,
-                        transcribeEndSec,
-                        outputProfile
-                    )
-                }.recoverCatching { firstErr ->
-                    if (!shouldFallbackRedownload(localSource, firstErr)) throw firstErr
-                    Log.w(
-                        tag,
-                        "fallbackRedownloadTriggered reason=${summarizeError(firstErr)} " +
-                            "path=${localSource.path}"
-                    )
-                    mainHandler.post { statusTextView?.text = "Retrying download without cache..." }
-                    localSource = extractor.downloadToLocal(sourceUrl, forceDownload = true)
+                Log.i(
+                    tag,
+                    "runSttPlan mode=$sttMode profile=$onDeviceProfile requestedSec=$requestedDurationSec useChunking=$useChunking " +
+                        "singlePad=${padBeforeSec}/${padAfterSec} chunks=${chunks.size}"
+                )
+                Log.i(
+                    tag,
+                    "chunkPlan count=${chunks.size} ranges=${chunks.joinToString(";") { "${it.transcribeStartSec}-${it.transcribeEndSec}" }}"
+                )
+                val chunkTranscripts = mutableListOf<WhisperVerboseResult>()
+                var cutElapsedMs = 0L
+                var sttElapsedMs = 0L
+                val chunkCutMs = mutableListOf<Long>()
+                val chunkSttMs = mutableListOf<Long>()
+                for ((index, chunk) in chunks.withIndex()) {
+                    mainHandler.post {
+                        statusTextView?.text = "Chunk ${index + 1}/${chunks.size}: cutting ${chunk.transcribeStartSec}s-${chunk.transcribeEndSec}s"
+                    }
+                    val cutStart = System.currentTimeMillis()
+                    val segmentFile = runCatching {
+                        segmentDownloader.cutSegmentFromLocal(
+                            localSource.path,
+                            chunk.transcribeStartSec,
+                            chunk.transcribeEndSec,
+                            outputProfile
+                        )
+                    }.recoverCatching { firstErr ->
+                        if (!shouldFallbackRedownload(localSource, firstErr)) throw firstErr
+                        Log.w(
+                            tag,
+                            "fallbackRedownloadTriggered reason=${summarizeError(firstErr)} " +
+                                "path=${localSource.path}"
+                        )
+                        mainHandler.post { statusTextView?.text = "Retrying download without cache..." }
+                        localSource = extractor.downloadToLocal(sourceUrl, forceDownload = true)
+                        Log.i(
+                            tag,
+                            "finalSource fromCache=${if (localSource.fromCache) 1 else 0} " +
+                                "forceDownload=1 path=${localSource.path}"
+                        )
+                        segmentDownloader.cutSegmentFromLocal(
+                            localSource.path,
+                            chunk.transcribeStartSec,
+                            chunk.transcribeEndSec,
+                            outputProfile
+                        )
+                    }.getOrThrow()
+                    val cutMs = System.currentTimeMillis() - cutStart
+                    cutElapsedMs += cutMs
+                    chunkCutMs += cutMs
+                    mainHandler.post {
+                        statusTextView?.text =
+                            if (sttMode == SttEngineFactory.MODE_ON_DEVICE) {
+                                "Chunk ${index + 1}/${chunks.size}: Running on-device Whisper..."
+                            } else {
+                                "Uploading to Whisper..."
+                            }
+                    }
+                    val sttStart = System.currentTimeMillis()
+                    val transcript = sttEngine.transcribeVerboseEnglish(apiKey, segmentFile)
+                    val sttMs = System.currentTimeMillis() - sttStart
+                    sttElapsedMs += sttMs
+                    chunkSttMs += sttMs
                     Log.i(
                         tag,
-                        "finalSource fromCache=${if (localSource.fromCache) 1 else 0} " +
-                            "forceDownload=1 path=${localSource.path}"
+                        "chunkTiming idx=${index + 1}/${chunks.size} range=${chunk.transcribeStartSec}-${chunk.transcribeEndSec} " +
+                            "cut=${cutMs}ms stt=${sttMs}ms segs=${transcript.segments?.size ?: 0} words=${transcript.words?.size ?: 0}"
                     )
-                    segmentDownloader.cutSegmentFromLocal(
-                        localSource.path,
-                        transcribeStartSec,
-                        transcribeEndSec,
-                        outputProfile
-                    )
-                }.getOrThrow()
-                val tCut = System.currentTimeMillis()
-                mainHandler.post {
-                    statusTextView?.text =
-                        if (sttMode == SttEngineFactory.MODE_ON_DEVICE) "Running on-device Whisper..." else "Uploading to Whisper..."
+                    chunkTranscripts += offsetTranscript(transcript, chunk.transcribeStartSec)
                 }
-                val transcript = sttEngine.transcribeVerboseEnglish(apiKey, segmentFile)
-                val tStt = System.currentTimeMillis()
-                val shifted = offsetTranscript(transcript, transcribeStartSec)
-                val sentences = sentenceAssembler.build(shifted, startSec.toDouble(), endSec.toDouble())
+                val assembleStart = System.currentTimeMillis()
+                val merge = mergeWhisperResults(chunkTranscripts)
+                val merged = merge.result
+                val sentences = sentenceAssembler.build(merged, startSec.toDouble(), endSec.toDouble())
                 val tAssemble = System.currentTimeMillis()
                 val canonical = YoutubeUrlParser.canonicalWatchUrlFromAny(sourceUrl) ?: sourceUrl
                 val saveFile = sentenceStore.save(canonical, sentences)
@@ -382,8 +441,12 @@ class OverlayService : Service() {
                 Log.i(
                     tag,
                     "timing mode=$sttMode profile=$onDeviceProfile pad=${padBeforeSec}/${padAfterSec} " +
-                        "download=${tDownload - t0}ms cut=${tCut - tDownload}ms " +
-                        "stt=${tStt - tCut}ms assemble=${tAssemble - tStt}ms save=${tSave - tAssemble}ms " +
+                        "chunks=${chunks.size} " +
+                        "download=${tDownload - t0}ms cut=${cutElapsedMs}ms " +
+                        "stt=${sttElapsedMs}ms assemble=${tAssemble - assembleStart}ms save=${tSave - tAssemble}ms " +
+                        "chunkCutMs=[${chunkCutMs.joinToString(",")}] chunkSttMs=[${chunkSttMs.joinToString(",")}] " +
+                        "mergeSegments=${merge.dedupedSegmentCount}/${merge.sourceSegmentCount} " +
+                        "mergeWords=${merge.dedupedWordCount}/${merge.sourceWordCount} " +
                         "total=${tSave - t0}ms"
                 )
                 mainHandler.post {
@@ -401,6 +464,110 @@ class OverlayService : Service() {
             }
             pipelineRunning = false
         }
+    }
+
+    private fun buildFastChunks(
+        requestStartSec: Int,
+        requestEndSec: Int
+    ): List<SttChunk> {
+        val result = mutableListOf<SttChunk>()
+        val maxTargetLen = FAST_CHUNK_SEC
+        var currentStart = requestStartSec
+        while (currentStart < requestEndSec) {
+            val currentEnd = (currentStart + maxTargetLen).coerceAtMost(requestEndSec)
+            val transcribeStart = if (currentStart == requestStartSec) {
+                (currentStart - FAST_CHUNK_EDGE_PAD_SEC).coerceAtLeast(0)
+            } else {
+                currentStart
+            }
+            val transcribeEnd = if (currentEnd >= requestEndSec) {
+                (currentEnd + FAST_CHUNK_EDGE_PAD_SEC).coerceAtLeast(transcribeStart + 1)
+            } else {
+                currentEnd.coerceAtLeast(transcribeStart + 1)
+            }
+            result += SttChunk(transcribeStart, transcribeEnd)
+            if (currentEnd >= requestEndSec) break
+            currentStart = (currentEnd - FAST_CHUNK_OVERLAP_SEC).coerceAtLeast(currentStart + 1)
+        }
+        return result
+    }
+
+    private fun mergeWhisperResults(parts: List<WhisperVerboseResult>): MergeSummary {
+        if (parts.isEmpty()) {
+            return MergeSummary(
+                WhisperVerboseResult("", null, null, null, null),
+                sourceSegmentCount = 0,
+                dedupedSegmentCount = 0,
+                sourceWordCount = 0,
+                dedupedWordCount = 0
+            )
+        }
+        val sourceSegments = parts.sumOf { it.segments?.size ?: 0 }
+        val sourceWords = parts.sumOf { it.words?.size ?: 0 }
+        val mergedSegments = parts
+            .flatMap { it.segments.orEmpty() }
+            .sortedBy { it.start }
+            .fold(mutableListOf<WhisperSegment>()) { acc, seg ->
+                val duplicateIdx = acc.indexOfLast { existing ->
+                    val nearSameTime = kotlin.math.abs(existing.start - seg.start) <= MERGE_SEGMENT_TIME_EPS &&
+                        kotlin.math.abs(existing.end - seg.end) <= MERGE_SEGMENT_TIME_EPS
+                    val overlapRatio = overlapRatio(existing.start, existing.end, seg.start, seg.end)
+                    val textA = normalizeMergeText(existing.text)
+                    val textB = normalizeMergeText(seg.text)
+                    val containsDuplicate = overlapRatio >= MERGE_SEGMENT_OVERLAP_RATIO &&
+                        (textA.contains(textB) || textB.contains(textA))
+                    nearSameTime && textA == textB || containsDuplicate
+                }
+                if (duplicateIdx >= 0) {
+                    val existing = acc[duplicateIdx]
+                    val existingDur = existing.end - existing.start
+                    val newDur = seg.end - seg.start
+                    val keepNew = newDur > existingDur || seg.text.length > existing.text.length
+                    if (keepNew) acc[duplicateIdx] = seg
+                } else {
+                    acc += seg
+                }
+                acc
+            }
+        val mergedWords = parts
+            .flatMap { it.words.orEmpty() }
+            .sortedBy { it.start }
+            .fold(mutableListOf<WhisperWord>()) { acc, word ->
+                val prev = acc.lastOrNull()
+                val nearDuplicate = prev != null &&
+                    kotlin.math.abs(prev.start - word.start) <= MERGE_WORD_TIME_EPS &&
+                    kotlin.math.abs(prev.end - word.end) <= MERGE_WORD_TIME_EPS &&
+                    normalizeMergeText(prev.word) == normalizeMergeText(word.word)
+                if (!nearDuplicate) acc += word
+                acc
+            }
+        val mergedText = if (mergedSegments.isNotEmpty()) {
+            mergedSegments.joinToString(separator = " ") { it.text.trim() }.replace(Regex("\\s+"), " ").trim()
+        } else {
+            parts.joinToString(separator = " ") { it.text.trim() }.replace(Regex("\\s+"), " ").trim()
+        }
+        return MergeSummary(
+            result = WhisperVerboseResult(
+                text = mergedText,
+                language = parts.firstNotNullOfOrNull { it.language },
+                duration = null,
+                segments = mergedSegments.ifEmpty { null },
+                words = mergedWords.ifEmpty { null }
+            ),
+            sourceSegmentCount = sourceSegments,
+            dedupedSegmentCount = mergedSegments.size,
+            sourceWordCount = sourceWords,
+            dedupedWordCount = mergedWords.size
+        )
+    }
+
+    private fun normalizeMergeText(raw: String): String =
+        raw.lowercase().replace(Regex("\\s+"), " ").trim()
+
+    private fun overlapRatio(aStart: Double, aEnd: Double, bStart: Double, bEnd: Double): Double {
+        val inter = (kotlin.math.min(aEnd, bEnd) - kotlin.math.max(aStart, bStart)).coerceAtLeast(0.0)
+        val minDur = kotlin.math.min((aEnd - aStart).coerceAtLeast(0.001), (bEnd - bStart).coerceAtLeast(0.001))
+        return (inter / minDur).coerceIn(0.0, 1.0)
     }
 
     private fun refreshSentenceButtons() {
@@ -1008,5 +1175,12 @@ class OverlayService : Service() {
         private const val STT_PAD_AFTER_SEC_ACCURATE = 4
         private const val STT_PAD_BEFORE_SEC_FAST = 2
         private const val STT_PAD_AFTER_SEC_FAST = 2
+        private const val FAST_CHUNK_SEC = 15
+        private const val FAST_CHUNK_OVERLAP_SEC = 1
+        private const val FAST_CHUNK_EDGE_PAD_SEC = 1
+        private const val FAST_CHUNK_MIN_REQUEST_SEC = 25
+        private const val MERGE_SEGMENT_TIME_EPS = 0.25
+        private const val MERGE_SEGMENT_OVERLAP_RATIO = 0.6
+        private const val MERGE_WORD_TIME_EPS = 0.08
     }
 }

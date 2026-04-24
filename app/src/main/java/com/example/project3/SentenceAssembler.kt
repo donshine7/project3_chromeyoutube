@@ -7,7 +7,7 @@ import kotlin.math.min
 
 class SentenceAssembler {
     fun build(result: WhisperVerboseResult, requestedStartSec: Double, requestedEndSec: Double): List<SentenceTimestamp> {
-        val allWords = result.words.orEmpty()
+        val allWords = result.words.orEmpty().filter { it.end - it.start > MIN_VALID_WORD_SEC }
         val allSegments = result.segments.orEmpty()
         val splitStart = requestedStartSec - SPLIT_WINDOW_PAD_SEC
         val splitEnd = requestedEndSec + SPLIT_WINDOW_PAD_SEC
@@ -15,10 +15,21 @@ class SentenceAssembler {
         val segments = allSegments.filter { overlapsWindow(it.start, it.end, requestedStartSec - 1.0, requestedEndSec + 1.0) }
         val sentences = if (fromWords.isNotEmpty()) splitWords(fromWords, segments) else splitSegments(segments)
         val clipped = sentences.mapNotNull { keepIfRelevant(it, requestedStartSec, requestedEndSec, allWords) }
-        return if (fromWords.isNotEmpty() && allSegments.isNotEmpty()) {
+        val normalized = if (fromWords.isNotEmpty() && allSegments.isNotEmpty()) {
             reinforceBoundaryPunctuation(clipped, allSegments)
         } else {
             clipped
+        }
+        if (normalized.isNotEmpty()) return normalized
+
+        // Fallback: keep non-zero overlap sentences to avoid empty output
+        // when clipping removes all boundary candidates.
+        return sentences.mapNotNull { sentence ->
+            val clippedStart = max(requestedStartSec, sentence.startSec)
+            val clippedEnd = min(requestedEndSec, sentence.endSec)
+            if (clippedEnd - clippedStart <= 0.0) return@mapNotNull null
+            val text = normalizeText(sentence.text)
+            if (text.isBlank()) null else sentence.copy(startSec = clippedStart, endSec = clippedEnd, text = text)
         }
     }
 
@@ -274,12 +285,17 @@ class SentenceAssembler {
         }
         val clippedStart = max(requestedStartSec, sentence.startSec)
         val clippedEnd = min(requestedEndSec, sentence.endSec)
+        val clippedDuration = clippedEnd - clippedStart
+        if (clippedDuration <= MIN_VALID_SENTENCE_SEC) {
+            return null
+        }
         val clippedText = clipSentenceTextByWords(
             sentence = sentence,
             clippedStart = clippedStart,
             clippedEnd = clippedEnd,
             allWords = allWords
         )
+        if (clippedText.isBlank()) return null
         return sentence.copy(
             startSec = clippedStart,
             endSec = clippedEnd,
@@ -502,10 +518,12 @@ class SentenceAssembler {
 
     companion object {
         private const val TAG = "SentenceAssembler"
+        private const val MIN_VALID_WORD_SEC = 0.01
         private const val SOFT_SPLIT_THRESHOLD = 2.8
         private const val CONNECTOR_SPLIT_THRESHOLD = 2.0
         private const val SPLIT_WINDOW_PAD_SEC = 1.8
         private const val CLIP_EPSILON_SEC = 0.10
+        private const val MIN_VALID_SENTENCE_SEC = 0.05
         private const val WORD_MATCH_EPSILON_SEC = 0.15
         private const val SHORT_CLIP_SEC = 0.8
         private const val HARD_MAX_WORDS = 52

@@ -172,7 +172,10 @@ Java_com_example_project3_WhisperJniBridge_transcribeVerboseJson(
     bool firstSeg = true;
     bool firstWordGlobal = true;
     std::ostringstream wordsJson;
-    wordsJson << "[";
+    const bool includeWords = enableWordTimestamps == JNI_TRUE;
+    if (includeWords) {
+        wordsJson << "[";
+    }
 
     for (int i = 0; i < nSegments; ++i) {
         const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
@@ -186,42 +189,49 @@ Java_com_example_project3_WhisperJniBridge_transcribeVerboseJson(
         json << "{\"id\":" << i
              << ",\"start\":" << (t0 * 0.01)
              << ",\"end\":" << (t1 * 0.01)
-             << ",\"text\":\"" << jsonEscape(segText) << "\",\"words\":[";
+             << ",\"text\":\"" << jsonEscape(segText) << "\"";
 
-        const int nTok = whisper_full_n_tokens(ctx, i);
-        bool firstWordInSeg = true;
-        for (int j = 0; j < nTok; ++j) {
-            whisper_token_data td = whisper_full_get_token_data(ctx, i, j);
-            const char *tokTextRaw = whisper_full_get_token_text(ctx, i, j);
-            std::string tokText = tokTextRaw ? tokTextRaw : "";
-            if (tokText.empty()) continue;
+        if (includeWords) {
+            json << ",\"words\":[";
+            const int nTok = whisper_full_n_tokens(ctx, i);
+            bool firstWordInSeg = true;
+            for (int j = 0; j < nTok; ++j) {
+                whisper_token_data td = whisper_full_get_token_data(ctx, i, j);
+                const char *tokTextRaw = whisper_full_get_token_text(ctx, i, j);
+                std::string tokText = tokTextRaw ? tokTextRaw : "";
+                if (tokText.empty()) continue;
 
-            // Skip special and timestamp-like tokens.
-            if (!tokText.empty() && tokText.front() == '[') continue;
-            if (tokText.find("<|") != std::string::npos) continue;
+                // Skip special and timestamp-like tokens.
+                if (!tokText.empty() && tokText.front() == '[') continue;
+                if (tokText.find("<|") != std::string::npos) continue;
 
-            const double ws = td.t0 * 0.01;
-            const double we = td.t1 * 0.01;
-            if (we < ws) continue;
+                const double ws = td.t0 * 0.01;
+                const double we = td.t1 * 0.01;
+                if (we < ws) continue;
 
-            if (!firstWordInSeg) json << ",";
-            firstWordInSeg = false;
-            json << "{\"word\":\"" << jsonEscape(tokText)
-                 << "\",\"start\":" << ws
-                 << ",\"end\":" << we << "}";
+                if (!firstWordInSeg) json << ",";
+                firstWordInSeg = false;
+                json << "{\"word\":\"" << jsonEscape(tokText)
+                    << "\",\"start\":" << ws
+                    << ",\"end\":" << we << "}";
 
-            if (!firstWordGlobal) wordsJson << ",";
-            firstWordGlobal = false;
-            wordsJson << "{\"word\":\"" << jsonEscape(tokText)
-                      << "\",\"start\":" << ws
-                      << ",\"end\":" << we << "}";
+                if (!firstWordGlobal) wordsJson << ",";
+                firstWordGlobal = false;
+                wordsJson << "{\"word\":\"" << jsonEscape(tokText)
+                        << "\",\"start\":" << ws
+                        << ",\"end\":" << we << "}";
+            }
+            json << "]";
         }
-        json << "]}";
+        json << "}";
     }
 
-    wordsJson << "]";
-    json << "],\"words\":" << wordsJson.str()
-         << ",\"text\":\"" << jsonEscape(fullText.str()) << "\"}";
+    json << "]";
+    if (includeWords) {
+        wordsJson << "]";
+        json << ",\"words\":" << wordsJson.str();
+    }
+    json << ",\"text\":\"" << jsonEscape(fullText.str()) << "\"}";
 
     const std::string out = json.str();
     return env->NewStringUTF(out.c_str());
