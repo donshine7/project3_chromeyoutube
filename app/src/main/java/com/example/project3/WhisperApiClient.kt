@@ -16,17 +16,7 @@ class WhisperApiClient {
         .build()
 
     fun transcribeVerboseEnglish(apiKey: String, audioFile: File): WhisperVerboseResult {
-        val translationAttempt = postWhisper(
-            apiKey = apiKey,
-            audioFile = audioFile,
-            endpoint = "https://api.openai.com/v1/audio/translations",
-            includeWordTimestamps = false
-        )
-        if (translationAttempt.isSuccessful) {
-            return parseVerboseResult(JSONObject(translationAttempt.payload))
-        }
-
-        // Fallback: some combinations of codec/build reject translations but accept transcriptions.
+        // Prefer transcription with word timestamps for stable sentence boundaries.
         val transcriptionAttempt = postWhisper(
             apiKey = apiKey,
             audioFile = audioFile,
@@ -37,10 +27,21 @@ class WhisperApiClient {
             return parseVerboseResult(JSONObject(transcriptionAttempt.payload))
         }
 
+        // Fallback: translation endpoint can still succeed on some edge formats.
+        val translationAttempt = postWhisper(
+            apiKey = apiKey,
+            audioFile = audioFile,
+            endpoint = "https://api.openai.com/v1/audio/translations",
+            includeWordTimestamps = false
+        )
+        if (translationAttempt.isSuccessful) {
+            return parseVerboseResult(JSONObject(translationAttempt.payload))
+        }
+
         throw IllegalStateException(
             "Whisper API failed. " +
-                "translations(${translationAttempt.code}): ${extractErrorMessage(translationAttempt.payload)}; " +
-                "transcriptions(${transcriptionAttempt.code}): ${extractErrorMessage(transcriptionAttempt.payload)}"
+                "transcriptions(${transcriptionAttempt.code}): ${extractErrorMessage(transcriptionAttempt.payload)}; " +
+                "translations(${translationAttempt.code}): ${extractErrorMessage(translationAttempt.payload)}"
         )
     }
 

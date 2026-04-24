@@ -291,6 +291,8 @@ class OverlayService : Service() {
     private fun runStt(startSec: Int, endSec: Int) {
         if (pipelineRunning) return
         pipelineRunning = true
+        val transcribeStartSec = (startSec - STT_PAD_BEFORE_SEC).coerceAtLeast(0)
+        val transcribeEndSec = (endSec + STT_PAD_AFTER_SEC).coerceAtLeast(transcribeStartSec + 1)
         val apiKey = prefs.getString(KEY_API_KEY, null)?.takeIf { it.isNotBlank() }
         val sourceUrl = resolveCurrentSourceUrl()
         if (apiKey.isNullOrBlank() || sourceUrl.isNullOrBlank()) {
@@ -308,9 +310,12 @@ class OverlayService : Service() {
                     "finalSource fromCache=${if (localSource.fromCache) 1 else 0} " +
                         "forceDownload=0 path=${localSource.path}"
                 )
-                mainHandler.post { statusTextView?.text = "Cutting audio segment..." }
+                mainHandler.post {
+                    statusTextView?.text =
+                        "Cutting audio segment... (${transcribeStartSec}s-${transcribeEndSec}s, target ${startSec}s-${endSec}s)"
+                }
                 val segmentFile = runCatching {
-                    segmentDownloader.cutSegmentFromLocal(localSource.path, startSec, endSec)
+                    segmentDownloader.cutSegmentFromLocal(localSource.path, transcribeStartSec, transcribeEndSec)
                 }.recoverCatching { firstErr ->
                     if (!shouldFallbackRedownload(localSource, firstErr)) throw firstErr
                     Log.w(
@@ -325,11 +330,11 @@ class OverlayService : Service() {
                         "finalSource fromCache=${if (localSource.fromCache) 1 else 0} " +
                             "forceDownload=1 path=${localSource.path}"
                     )
-                    segmentDownloader.cutSegmentFromLocal(localSource.path, startSec, endSec)
+                    segmentDownloader.cutSegmentFromLocal(localSource.path, transcribeStartSec, transcribeEndSec)
                 }.getOrThrow()
                 mainHandler.post { statusTextView?.text = "Uploading to Whisper..." }
                 val transcript = whisperClient.transcribeVerboseEnglish(apiKey, segmentFile)
-                val shifted = offsetTranscript(transcript, startSec)
+                val shifted = offsetTranscript(transcript, transcribeStartSec)
                 val sentences = sentenceAssembler.build(shifted, startSec.toDouble(), endSec.toDouble())
                 val canonical = YoutubeUrlParser.canonicalWatchUrlFromAny(sourceUrl) ?: sourceUrl
                 val saveFile = sentenceStore.save(canonical, sentences)
@@ -490,8 +495,8 @@ class OverlayService : Service() {
         }
         showKoreanKeys.remove(sentenceKey)
         expandedSentenceKey = sentenceKey
-        refreshSentenceButtons()
         playSentenceRepeat(folder, sentence, repeatCount = 5)
+        refreshSentenceButtons()
     }
 
     private fun onSentenceTranslateClicked(folder: SentenceTimestampStore.FolderEntry, sentence: SentenceTimestamp) {
@@ -558,6 +563,7 @@ class OverlayService : Service() {
         val sentenceKey = sentenceUiKey(sentence)
         repeatCancelled = false
         activeSentenceKey = sentenceKey
+        refreshSentenceButtons()
         val currentVideoId = resolveCurrentVideoId()
         if (currentVideoId != folderVideoId) {
             val target = "${YoutubeUrlParser.canonicalWatchUrl(folderVideoId)}&t=${sentence.startSec.toInt()}s"
@@ -702,6 +708,7 @@ class OverlayService : Service() {
         repeatSession = null
         repeatCancelled = false
         activeSentenceKey = null
+        refreshSentenceButtons()
     }
 
     private fun resolveCurrentSourceUrl(): String? {
@@ -947,5 +954,7 @@ class OverlayService : Service() {
         private const val KEY_API_KEY = "openai_api_key"
         private const val KEY_SELECTED_URL = "selected_url"
         private const val KEY_LAST_URL = "last_url"
+        private const val STT_PAD_BEFORE_SEC = 6
+        private const val STT_PAD_AFTER_SEC = 4
     }
 }
