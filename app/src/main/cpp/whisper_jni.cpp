@@ -126,7 +126,8 @@ Java_com_example_project3_WhisperJniBridge_transcribeVerboseJson(
         jstring modelPathJ,
         jstring audioPathJ,
         jstring languageJ,
-        jboolean enableWordTimestamps) {
+        jboolean enableWordTimestamps,
+        jint nThreads) {
     const std::string modelPath = jstringToStd(env, modelPathJ);
     const std::string audioPath = jstringToStd(env, audioPathJ);
     const std::string language = jstringToStd(env, languageJ);
@@ -153,7 +154,7 @@ Java_com_example_project3_WhisperJniBridge_transcribeVerboseJson(
     params.token_timestamps = enableWordTimestamps == JNI_TRUE;
     params.max_len = 0;
     params.max_tokens = 0;
-    params.n_threads = 4;
+    params.n_threads = std::max(1, static_cast<int>(nThreads));
     params.language = language.empty() ? "en" : language.c_str();
 
     if (whisper_full(ctx, params, pcmf32.data(), static_cast<int>(pcmf32.size())) != 0) {

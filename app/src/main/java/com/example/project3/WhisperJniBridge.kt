@@ -14,7 +14,8 @@ class WhisperJniBridge {
         modelPath: String,
         audioPath: String,
         language: String,
-        enableWordTimestamps: Boolean
+        enableWordTimestamps: Boolean,
+        nThreads: Int
     ): String
 
     companion object {

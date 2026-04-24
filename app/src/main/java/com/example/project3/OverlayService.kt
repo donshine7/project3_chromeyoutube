@@ -290,10 +290,22 @@ class OverlayService : Service() {
     private fun runStt(startSec: Int, endSec: Int) {
         if (pipelineRunning) return
         pipelineRunning = true
-        val transcribeStartSec = (startSec - STT_PAD_BEFORE_SEC).coerceAtLeast(0)
-        val transcribeEndSec = (endSec + STT_PAD_AFTER_SEC).coerceAtLeast(transcribeStartSec + 1)
         val sttMode = prefs.getString(KEY_STT_MODE, SttEngineFactory.MODE_API) ?: SttEngineFactory.MODE_API
-        val sttEngine = SttEngineFactory.create(this, sttMode)
+        val onDeviceProfile = prefs.getString(KEY_ON_DEVICE_PROFILE, SttEngineFactory.ON_DEVICE_PROFILE_ACCURATE)
+            ?: SttEngineFactory.ON_DEVICE_PROFILE_ACCURATE
+        val padBeforeSec = when {
+            sttMode == SttEngineFactory.MODE_ON_DEVICE && onDeviceProfile == SttEngineFactory.ON_DEVICE_PROFILE_FAST ->
+                STT_PAD_BEFORE_SEC_FAST
+            else -> STT_PAD_BEFORE_SEC_ACCURATE
+        }
+        val padAfterSec = when {
+            sttMode == SttEngineFactory.MODE_ON_DEVICE && onDeviceProfile == SttEngineFactory.ON_DEVICE_PROFILE_FAST ->
+                STT_PAD_AFTER_SEC_FAST
+            else -> STT_PAD_AFTER_SEC_ACCURATE
+        }
+        val transcribeStartSec = (startSec - padBeforeSec).coerceAtLeast(0)
+        val transcribeEndSec = (endSec + padAfterSec).coerceAtLeast(transcribeStartSec + 1)
+        val sttEngine = SttEngineFactory.create(this, sttMode, onDeviceProfile)
         val apiKey = prefs.getString(KEY_API_KEY, null)?.takeIf { it.isNotBlank() }
         val sourceUrl = resolveCurrentSourceUrl()
         if ((sttMode == SttEngineFactory.MODE_API && apiKey.isNullOrBlank()) || sourceUrl.isNullOrBlank()) {
@@ -369,7 +381,8 @@ class OverlayService : Service() {
                 val tSave = System.currentTimeMillis()
                 Log.i(
                     tag,
-                    "timing mode=$sttMode download=${tDownload - t0}ms cut=${tCut - tDownload}ms " +
+                    "timing mode=$sttMode profile=$onDeviceProfile pad=${padBeforeSec}/${padAfterSec} " +
+                        "download=${tDownload - t0}ms cut=${tCut - tDownload}ms " +
                         "stt=${tStt - tCut}ms assemble=${tAssemble - tStt}ms save=${tSave - tAssemble}ms " +
                         "total=${tSave - t0}ms"
                 )
@@ -990,7 +1003,10 @@ class OverlayService : Service() {
         private const val KEY_SELECTED_URL = "selected_url"
         private const val KEY_LAST_URL = "last_url"
         private const val KEY_STT_MODE = "stt_mode"
-        private const val STT_PAD_BEFORE_SEC = 6
-        private const val STT_PAD_AFTER_SEC = 4
+        private const val KEY_ON_DEVICE_PROFILE = "on_device_profile"
+        private const val STT_PAD_BEFORE_SEC_ACCURATE = 6
+        private const val STT_PAD_AFTER_SEC_ACCURATE = 4
+        private const val STT_PAD_BEFORE_SEC_FAST = 2
+        private const val STT_PAD_AFTER_SEC_FAST = 2
     }
 }

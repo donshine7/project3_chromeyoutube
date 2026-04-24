@@ -10,6 +10,9 @@
     <string name="stt_mode_label">STT Mode</string>
     <string name="stt_mode_api">Whisper API</string>
     <string name="stt_mode_on_device">On-device (whisper.cpp)</string>
+    <string name="on_device_profile_label">On-device Profile</string>
+    <string name="on_device_profile_accurate">Accurate mode</string>
+    <string name="on_device_profile_fast">Fast mode</string>
     <string name="action_open_accessibility_settings">Open Accessibility Settings</string>
     <string name="action_open_notification_listener_settings">Open Notification Listener Settings</string>
     <string name="action_start_overlay_mode">Start Overlay Mode</string>

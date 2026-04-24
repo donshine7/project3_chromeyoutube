@@ -93,6 +93,33 @@
                 android:text="@string/stt_mode_on_device" />
         </RadioGroup>
 
+        <TextView
+            android:id="@+id/onDeviceProfileLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/on_device_profile_label" />
+
+        <RadioGroup
+            android:id="@+id/onDeviceProfileGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/onDeviceProfileAccurate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/on_device_profile_accurate" />
+
+            <RadioButton
+                android:id="@+id/onDeviceProfileFast"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/on_device_profile_fast" />
+        </RadioGroup>
+
         <Button
             android:id="@+id/downloadButton"
             android:layout_width="match_parent"

@@ -19,6 +19,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var endInput: EditText
     private lateinit var apiKeyInput: EditText
     private lateinit var sttModeGroup: RadioGroup
+    private lateinit var onDeviceProfileGroup: RadioGroup
+    private lateinit var onDeviceProfileLabel: TextView
     private lateinit var statusText: TextView
     private val mainHandler = Handler(Looper.getMainLooper())
     private val chromePoller = object : Runnable {
@@ -37,11 +39,21 @@ class MainActivity : AppCompatActivity() {
         endInput = findViewById(R.id.endInput)
         apiKeyInput = findViewById(R.id.apiKeyInput)
         sttModeGroup = findViewById(R.id.sttModeGroup)
+        onDeviceProfileGroup = findViewById(R.id.onDeviceProfileGroup)
+        onDeviceProfileLabel = findViewById(R.id.onDeviceProfileLabel)
         statusText = findViewById(R.id.statusText)
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         apiKeyInput.setText(prefs.getString(KEY_API_KEY, ""))
         val mode = prefs.getString(KEY_STT_MODE, STT_MODE_API)
         sttModeGroup.check(if (mode == STT_MODE_ON_DEVICE) R.id.sttModeOnDevice else R.id.sttModeApi)
+        val profile = prefs.getString(KEY_ON_DEVICE_PROFILE, ON_DEVICE_PROFILE_ACCURATE)
+        onDeviceProfileGroup.check(
+            if (profile == ON_DEVICE_PROFILE_FAST) R.id.onDeviceProfileFast else R.id.onDeviceProfileAccurate
+        )
+        updateOnDeviceProfileEnabled(mode == STT_MODE_ON_DEVICE)
+        sttModeGroup.setOnCheckedChangeListener { _, checkedId ->
+            updateOnDeviceProfileEnabled(checkedId == R.id.sttModeOnDevice)
+        }
 
         findViewById<Button>(R.id.downloadButton).setOnClickListener {
             startDownloadFlow()
@@ -147,6 +159,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_SELECTED_URL, sourceUrl)
             .putString(KEY_LAST_URL, sourceUrl)
             .putString(KEY_STT_MODE, mode)
+            .putString(KEY_ON_DEVICE_PROFILE, selectedOnDeviceProfile())
             .apply()
         statusText.text = "Overlay pipeline starting..."
         startOverlayMode(startSec = startSec, endSec = endSec)
@@ -167,17 +180,6 @@ class MainActivity : AppCompatActivity() {
             3 -> nums[0] * 3600 + nums[1] * 60 + nums[2]
             else -> null
         }
-    }
-
-    companion object {
-        private const val PREFS_NAME = "project3_main"
-        private const val KEY_API_KEY = "openai_api_key"
-        private const val KEY_LAST_URL = "last_url"
-        private const val KEY_SELECTED_URL = "selected_url"
-        private const val KEY_STT_MODE = "stt_mode"
-        private const val STT_MODE_API = "api"
-        private const val STT_MODE_ON_DEVICE = "on_device"
-        private const val CHROME_POLL_INTERVAL_MS = 1500L
     }
 
     override fun onStart() {
@@ -214,6 +216,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_SELECTED_URL, selectedUrl)
             .putString(KEY_LAST_URL, selectedUrl)
             .putString(KEY_STT_MODE, selectedSttMode())
+            .putString(KEY_ON_DEVICE_PROFILE, selectedOnDeviceProfile())
             .apply()
 
         val overlayIntent = Intent(this, OverlayService::class.java).apply {
@@ -236,5 +239,34 @@ class MainActivity : AppCompatActivity() {
         } else {
             STT_MODE_API
         }
+    }
+
+    private fun selectedOnDeviceProfile(): String {
+        return if (onDeviceProfileGroup.checkedRadioButtonId == R.id.onDeviceProfileFast) {
+            ON_DEVICE_PROFILE_FAST
+        } else {
+            ON_DEVICE_PROFILE_ACCURATE
+        }
+    }
+
+    private fun updateOnDeviceProfileEnabled(enabled: Boolean) {
+        onDeviceProfileLabel.alpha = if (enabled) 1.0f else 0.45f
+        for (i in 0 until onDeviceProfileGroup.childCount) {
+            onDeviceProfileGroup.getChildAt(i).isEnabled = enabled
+        }
+    }
+
+    companion object {
+        private const val PREFS_NAME = "project3_main"
+        private const val KEY_API_KEY = "openai_api_key"
+        private const val KEY_LAST_URL = "last_url"
+        private const val KEY_SELECTED_URL = "selected_url"
+        private const val KEY_STT_MODE = "stt_mode"
+        private const val KEY_ON_DEVICE_PROFILE = "on_device_profile"
+        private const val STT_MODE_API = "api"
+        private const val STT_MODE_ON_DEVICE = "on_device"
+        private const val ON_DEVICE_PROFILE_ACCURATE = "accurate"
+        private const val ON_DEVICE_PROFILE_FAST = "fast"
+        private const val CHROME_POLL_INTERVAL_MS = 1500L
     }
 }
