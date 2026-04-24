@@ -7,6 +7,9 @@
     <string name="hint_start_time">Start (e.g. 07:00 or 00:07:00)</string>
     <string name="hint_end_time">End (e.g. 08:00 or 00:08:00)</string>
     <string name="hint_api_key">OpenAI API Key (sk-...)</string>
+    <string name="stt_mode_label">STT Mode</string>
+    <string name="stt_mode_api">Whisper API</string>
+    <string name="stt_mode_on_device">On-device (whisper.cpp)</string>
     <string name="action_open_accessibility_settings">Open Accessibility Settings</string>
     <string name="action_open_notification_listener_settings">Open Notification Listener Settings</string>
     <string name="action_start_overlay_mode">Start Overlay Mode</string>

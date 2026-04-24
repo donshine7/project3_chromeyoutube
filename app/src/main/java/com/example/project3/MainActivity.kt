@@ -8,6 +8,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -17,6 +18,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startInput: EditText
     private lateinit var endInput: EditText
     private lateinit var apiKeyInput: EditText
+    private lateinit var sttModeGroup: RadioGroup
     private lateinit var statusText: TextView
     private val mainHandler = Handler(Looper.getMainLooper())
     private val chromePoller = object : Runnable {
@@ -34,8 +36,12 @@ class MainActivity : AppCompatActivity() {
         startInput = findViewById(R.id.startInput)
         endInput = findViewById(R.id.endInput)
         apiKeyInput = findViewById(R.id.apiKeyInput)
+        sttModeGroup = findViewById(R.id.sttModeGroup)
         statusText = findViewById(R.id.statusText)
-        apiKeyInput.setText(getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_API_KEY, ""))
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        apiKeyInput.setText(prefs.getString(KEY_API_KEY, ""))
+        val mode = prefs.getString(KEY_STT_MODE, STT_MODE_API)
+        sttModeGroup.check(if (mode == STT_MODE_ON_DEVICE) R.id.sttModeOnDevice else R.id.sttModeApi)
 
         findViewById<Button>(R.id.downloadButton).setOnClickListener {
             startDownloadFlow()
@@ -130,8 +136,9 @@ class MainActivity : AppCompatActivity() {
             updateStatus(getString(R.string.status_stage_failed, "End time must be greater than start time"))
             return
         }
+        val mode = selectedSttMode()
         val apiKey = apiKeyInput.text?.toString().orEmpty().trim()
-        if (apiKey.isBlank()) {
+        if (mode == STT_MODE_API && apiKey.isBlank()) {
             updateStatus(getString(R.string.status_stage_failed, "OpenAI API key is required"))
             return
         }
@@ -139,6 +146,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_API_KEY, apiKey)
             .putString(KEY_SELECTED_URL, sourceUrl)
             .putString(KEY_LAST_URL, sourceUrl)
+            .putString(KEY_STT_MODE, mode)
             .apply()
         statusText.text = "Overlay pipeline starting..."
         startOverlayMode(startSec = startSec, endSec = endSec)
@@ -166,6 +174,9 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_API_KEY = "openai_api_key"
         private const val KEY_LAST_URL = "last_url"
         private const val KEY_SELECTED_URL = "selected_url"
+        private const val KEY_STT_MODE = "stt_mode"
+        private const val STT_MODE_API = "api"
+        private const val STT_MODE_ON_DEVICE = "on_device"
         private const val CHROME_POLL_INTERVAL_MS = 1500L
     }
 
@@ -202,6 +213,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_API_KEY, apiKey)
             .putString(KEY_SELECTED_URL, selectedUrl)
             .putString(KEY_LAST_URL, selectedUrl)
+            .putString(KEY_STT_MODE, selectedSttMode())
             .apply()
 
         val overlayIntent = Intent(this, OverlayService::class.java).apply {
@@ -215,6 +227,14 @@ class MainActivity : AppCompatActivity() {
             "Overlay started. Auto STT queued: ${startSec}s-${endSec}s"
         } else {
             getString(R.string.status_overlay_started)
+        }
+    }
+
+    private fun selectedSttMode(): String {
+        return if (sttModeGroup.checkedRadioButtonId == R.id.sttModeOnDevice) {
+            STT_MODE_ON_DEVICE
+        } else {
+            STT_MODE_API
         }
     }
 }

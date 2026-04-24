@@ -1,0 +1,10 @@
+C:\PROJECT\project3\app\src\main\cpp\CMakeLists.txt
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\cmake\build-info.cmake
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\cmake\whisper-config.cmake.in
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\CMakeLists.txt
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\ggml\cmake\common.cmake
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\ggml\cmake\ggml-config.cmake.in
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\ggml\CMakeLists.txt
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\ggml\src\CMakeLists.txt
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\ggml\src\ggml-cpu\CMakeLists.txt
+C:\PROJECT\project3\app\src\main\cpp\third_party\whisper.cpp\src\CMakeLists.txt

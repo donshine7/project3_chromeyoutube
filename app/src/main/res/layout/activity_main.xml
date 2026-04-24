@@ -67,6 +67,32 @@
             android:hint="@string/hint_api_key"
             android:inputType="textPassword" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/stt_mode_label" />
+
+        <RadioGroup
+            android:id="@+id/sttModeGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/sttModeApi"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stt_mode_api" />
+
+            <RadioButton
+                android:id="@+id/sttModeOnDevice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/stt_mode_on_device" />
+        </RadioGroup>
+
         <Button
             android:id="@+id/downloadButton"
             android:layout_width="match_parent"

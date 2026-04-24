@@ -6,6 +6,10 @@ plugins {
 
 val buildPythonPath = providers.gradleProperty("chaquopy.buildPythonPath")
     .orElse("python")
+val enableOnDeviceNative = providers.gradleProperty("enableOnDeviceNative")
+    .orElse("false")
+    .map { it.equals("true", ignoreCase = true) }
+    .get()
 
 android {
     namespace = "com.example.project3"
@@ -21,6 +25,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a")
+        }
+
+        if (enableOnDeviceNative) {
+            externalNativeBuild {
+                cmake {
+                    cppFlags += listOf("-std=c++17")
+                }
+            }
         }
     }
 
@@ -40,6 +52,14 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    if (enableOnDeviceNative) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+            }
+        }
     }
 }
 

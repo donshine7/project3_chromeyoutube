@@ -50,7 +50,6 @@ class OverlayService : Service() {
     private val prefs by lazy { getSharedPreferences(PREFS_NAME, MODE_PRIVATE) }
     private val extractor by lazy { YoutubeDirectUrlExtractor(this) }
     private val segmentDownloader by lazy { AudioSegmentDownloader(this) }
-    private val whisperClient by lazy { WhisperApiClient() }
     private val sentenceAssembler by lazy { SentenceAssembler() }
     private val sentenceStore by lazy { SentenceTimestampStore(this) }
     private val sentenceTranslationClient by lazy { SentenceTranslationClient() }
@@ -293,18 +292,26 @@ class OverlayService : Service() {
         pipelineRunning = true
         val transcribeStartSec = (startSec - STT_PAD_BEFORE_SEC).coerceAtLeast(0)
         val transcribeEndSec = (endSec + STT_PAD_AFTER_SEC).coerceAtLeast(transcribeStartSec + 1)
+        val sttMode = prefs.getString(KEY_STT_MODE, SttEngineFactory.MODE_API) ?: SttEngineFactory.MODE_API
+        val sttEngine = SttEngineFactory.create(this, sttMode)
         val apiKey = prefs.getString(KEY_API_KEY, null)?.takeIf { it.isNotBlank() }
         val sourceUrl = resolveCurrentSourceUrl()
-        if (apiKey.isNullOrBlank() || sourceUrl.isNullOrBlank()) {
+        if ((sttMode == SttEngineFactory.MODE_API && apiKey.isNullOrBlank()) || sourceUrl.isNullOrBlank()) {
             pipelineRunning = false
-            statusTextView?.text = "Missing API key or URL."
+            statusTextView?.text = if (sourceUrl.isNullOrBlank()) {
+                "Missing URL."
+            } else {
+                "Missing API key."
+            }
             return
         }
         setOutputText("")
         statusTextView?.text = "Downloading with yt-dlp..."
         thread(name = "overlay-stt") {
             runCatching {
+                val t0 = System.currentTimeMillis()
                 var localSource = extractor.downloadToLocal(sourceUrl)
+                val tDownload = System.currentTimeMillis()
                 Log.i(
                     tag,
                     "finalSource fromCache=${if (localSource.fromCache) 1 else 0} " +
@@ -314,8 +321,18 @@ class OverlayService : Service() {
                     statusTextView?.text =
                         "Cutting audio segment... (${transcribeStartSec}s-${transcribeEndSec}s, target ${startSec}s-${endSec}s)"
                 }
+                val outputProfile = if (sttMode == SttEngineFactory.MODE_ON_DEVICE) {
+                    AudioSegmentDownloader.OutputProfile.WAV_16K_MONO
+                } else {
+                    AudioSegmentDownloader.OutputProfile.COMPRESSED_WEBM
+                }
                 val segmentFile = runCatching {
-                    segmentDownloader.cutSegmentFromLocal(localSource.path, transcribeStartSec, transcribeEndSec)
+                    segmentDownloader.cutSegmentFromLocal(
+                        localSource.path,
+                        transcribeStartSec,
+                        transcribeEndSec,
+                        outputProfile
+                    )
                 }.recoverCatching { firstErr ->
                     if (!shouldFallbackRedownload(localSource, firstErr)) throw firstErr
                     Log.w(
@@ -330,14 +347,32 @@ class OverlayService : Service() {
                         "finalSource fromCache=${if (localSource.fromCache) 1 else 0} " +
                             "forceDownload=1 path=${localSource.path}"
                     )
-                    segmentDownloader.cutSegmentFromLocal(localSource.path, transcribeStartSec, transcribeEndSec)
+                    segmentDownloader.cutSegmentFromLocal(
+                        localSource.path,
+                        transcribeStartSec,
+                        transcribeEndSec,
+                        outputProfile
+                    )
                 }.getOrThrow()
-                mainHandler.post { statusTextView?.text = "Uploading to Whisper..." }
-                val transcript = whisperClient.transcribeVerboseEnglish(apiKey, segmentFile)
+                val tCut = System.currentTimeMillis()
+                mainHandler.post {
+                    statusTextView?.text =
+                        if (sttMode == SttEngineFactory.MODE_ON_DEVICE) "Running on-device Whisper..." else "Uploading to Whisper..."
+                }
+                val transcript = sttEngine.transcribeVerboseEnglish(apiKey, segmentFile)
+                val tStt = System.currentTimeMillis()
                 val shifted = offsetTranscript(transcript, transcribeStartSec)
                 val sentences = sentenceAssembler.build(shifted, startSec.toDouble(), endSec.toDouble())
+                val tAssemble = System.currentTimeMillis()
                 val canonical = YoutubeUrlParser.canonicalWatchUrlFromAny(sourceUrl) ?: sourceUrl
                 val saveFile = sentenceStore.save(canonical, sentences)
+                val tSave = System.currentTimeMillis()
+                Log.i(
+                    tag,
+                    "timing mode=$sttMode download=${tDownload - t0}ms cut=${tCut - tDownload}ms " +
+                        "stt=${tStt - tCut}ms assemble=${tAssemble - tStt}ms save=${tSave - tAssemble}ms " +
+                        "total=${tSave - t0}ms"
+                )
                 mainHandler.post {
                     setOutputText(renderSentenceResult(sentences))
                     statusTextView?.text = "STT done: ${saveFile.name}"
@@ -954,6 +989,7 @@ class OverlayService : Service() {
         private const val KEY_API_KEY = "openai_api_key"
         private const val KEY_SELECTED_URL = "selected_url"
         private const val KEY_LAST_URL = "last_url"
+        private const val KEY_STT_MODE = "stt_mode"
         private const val STT_PAD_BEFORE_SEC = 6
         private const val STT_PAD_AFTER_SEC = 4
     }
