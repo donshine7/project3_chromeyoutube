@@ -39,6 +39,7 @@ def download_audio_file(source_url: str, output_dir: str, force_download: bool =
                         "fromCache": True,
                         "cacheAgeSec": age_sec,
                         "liveStatus": live_status,
+                        "title": info.get("title"),
                     }
                 )
 
@@ -60,5 +61,6 @@ def download_audio_file(source_url: str, output_dir: str, force_download: bool =
             "fromCache": False,
             "cacheAgeSec": 0,
             "liveStatus": final_info.get("live_status"),
+            "title": final_info.get("title"),
         }
     )

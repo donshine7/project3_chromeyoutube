@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.drawable.GradientDrawable
@@ -274,9 +275,13 @@ class OverlayService : Service() {
             Toast.makeText(this, "STT in progress.", Toast.LENGTH_SHORT).show()
             return
         }
-        val snapshot = ChromePlaybackReader.readSnapshot(this)
+        val playbackTarget = currentPlaybackTarget()
+        if (!PlaybackTarget.isChrome(playbackTarget)) {
+            captureClipboardYoutubeUrl(showStatus = true)
+        }
+        val snapshot = ChromePlaybackReader.readSnapshot(this, playbackTarget)
         if (snapshot == null || snapshot.positionMs < 0L) {
-            statusTextView?.text = "Playback not detected. Open YouTube in Chrome."
+            statusTextView?.text = "Playback not detected. Open YouTube in ${PlaybackTarget.label(playbackTarget)}."
             return
         }
         val sec = ((snapshot.positionMs + 500L) / 1000L).toInt().coerceAtLeast(0)
@@ -473,6 +478,7 @@ class OverlayService : Service() {
                 val canonical = YoutubeUrlParser.canonicalWatchUrlFromAny(sourceUrl) ?: sourceUrl
                 val saveFile = sentenceStore.save(
                     youtubeUrl = canonical,
+                    videoTitle = localSource.title,
                     sentences = sentences,
                     replaceStartSec = startSec.toDouble(),
                     replaceEndSec = endSec.toDouble()
@@ -635,14 +641,24 @@ class OverlayService : Service() {
                     gap <= 0.20 &&
                     (next.endSec - cur.startSec) <= 18.0 &&
                     (endsWithIncompleteTailText(cur.text) || protectsTextBoundary(cur.text, next.text))
-                if (continuationJoin || incompleteTailJoin) {
+                val hardCutRepairJoin = !endsSentenceText(cur.text) &&
+                    gap <= FINAL_HARD_CUT_REPAIR_GAP_SEC &&
+                    (next.endSec - cur.startSec) <= FINAL_HARD_CUT_REPAIR_MAX_SPAN_SEC &&
+                    cur.text.trim().split(Regex("\\s+")).count { it.isNotBlank() } >= 4 &&
+                    next.text.trim().split(Regex("\\s+")).count { it.isNotBlank() } >= 2 &&
+                    !startsClearSentenceStarterText(next.text)
+                if (continuationJoin || incompleteTailJoin || hardCutRepairJoin) {
                     merged += cur.copy(
                         endSec = next.endSec,
                         text = "${cur.text} ${next.text}".replace(Regex("\\s+"), " ").trim()
                     )
                     Log.d(
                         tag,
-                        "finalCleanup join_${if (incompleteTailJoin) "incomplete" else "continuation"} gap=${"%.2f".format(gap)}"
+                        "finalCleanup join_${when {
+                            incompleteTailJoin -> "incomplete"
+                            hardCutRepairJoin -> "hard_cut_repair"
+                            else -> "continuation"
+                        }} gap=${"%.2f".format(gap)}"
                     )
                     i += 2
                     continue
@@ -681,6 +697,37 @@ class OverlayService : Service() {
             ?.lowercase()
             ?: return false
         return token in setOf("to", "for", "of", "by", "in", "on", "with", "from", "that", "which", "because", "prove", "using")
+    }
+
+    private fun startsClearSentenceStarterText(text: String): Boolean {
+        val tokens = text.trim()
+            .split(Regex("\\s+"))
+            .map {
+                it.trim(',', ';', ':', '.', '!', '?', ')', ']', '"', '\'')
+                    .lowercase()
+            }
+            .filter { it.isNotBlank() }
+        val t0 = tokens.getOrNull(0) ?: return false
+        val t1 = tokens.getOrNull(1).orEmpty()
+        val t2 = tokens.getOrNull(2).orEmpty()
+        if (t0 in setOf("yes", "no", "yeah", "ok", "okay", "right")) return true
+        if (t0 == "according" && t1 == "to") return true
+        if (t0 == "right" && t1 == "i" && t2 == "mean") return true
+        if (t0 == "i" && t1 == "mean") return true
+        if (t0 == "this" && t1 == "abrupt") return true
+        if (t0 == "these" && t1 == "abrupt") return true
+        if (t0 == "the" && t1 == "international") return true
+        if (t0 == "so" && t1 == "if") return true
+        if (t0 == "so" && (t1 == "i'm" || t1 == "im" || t1 == "i")) return true
+        if (t0 == "when") return true
+        if (t0 == "at") return true
+        if (t0 == "google" && t1 == "recently") return true
+        if (t0 in setOf("this", "these", "those", "there", "he", "she", "they", "we", "it") &&
+            t1 in setOf("recently", "also", "now", "will", "is", "are", "was", "were", "has", "have", "had")
+        ) {
+            return true
+        }
+        return false
     }
 
     private fun endsWithIncompleteTailText(text: String): Boolean {
@@ -782,7 +829,9 @@ class OverlayService : Service() {
             selectedContent == null -> {
                 val entries = folders.filter { it.date == selectedDate }.sortedByDescending { it.contentId }
                 entries.forEach { entry ->
-                    val label = sentenceStore.loadYoutubeUrl(entry)?.let(YoutubeUrlParser::extractVideoId) ?: entry.contentId
+                    val label = sentenceStore.loadVideoTitle(entry)
+                        ?: sentenceStore.loadYoutubeUrl(entry)?.let(YoutubeUrlParser::extractVideoId)
+                        ?: entry.contentId
                     container.addView(makeEntryRow(label, onOpen = {
                         selectedContent = entry
                         refreshSentenceButtons()
@@ -958,17 +1007,23 @@ class OverlayService : Service() {
         repeatCancelled = false
         activeSentenceKey = sentenceKey
         refreshSentenceButtons()
-        val currentVideoId = resolveCurrentVideoId()
-        if (currentVideoId != folderVideoId) {
-            val target = "${YoutubeUrlParser.canonicalWatchUrl(folderVideoId)}&t=${sentence.startSec.toInt()}s"
-            openYoutubeTargetInChrome(target)
-            waitForVideoSwitchThenStart(folderVideoId, sentence, repeatCount)
+        val target = "${YoutubeUrlParser.canonicalWatchUrl(folderVideoId)}&t=${sentence.startSec.toInt()}s"
+        val playbackTarget = currentPlaybackTarget()
+        repeatHandler.removeCallbacksAndMessages(null)
+        ChromeCaptureStore.clearTransientPlaybackSample(this)
+        if (PlaybackTarget.isChrome(playbackTarget) && resolveCurrentVideoId() == folderVideoId) {
+            statusTextView?.text = "Repeating current Chrome video..."
+            startRepeatSession(sentence, repeatCount, folderVideoId)
             return
         }
-        startRepeatSession(sentence, repeatCount, folderVideoId)
+        statusTextView?.text = "Opening saved video in ${PlaybackTarget.label(playbackTarget)}..."
+        openYoutubeTarget(target, playbackTarget)
+        val minWaitMs = if (PlaybackTarget.isChrome(playbackTarget)) 900L else 1_500L
+        waitForVideoSwitchThenStart(folderVideoId, sentence, repeatCount, minWaitMs = minWaitMs)
     }
 
     private fun startRepeatSession(sentence: SentenceTimestamp, repeatCount: Int, expectedVideoId: String?) {
+        PlaybackAudioHelper.ensureAudible(this)
         val startMs = (sentence.startSec * 1000.0).toLong().coerceAtLeast(0L)
         val endMs = (sentence.endSec * 1000.0).toLong().coerceAtLeast(startMs + 300L)
         repeatSession = RepeatSession(
@@ -982,16 +1037,22 @@ class OverlayService : Service() {
         repeatHandler.post(repeatTickRunnable)
     }
 
-    private fun waitForVideoSwitchThenStart(expectedVideoId: String, sentence: SentenceTimestamp, repeatCount: Int) {
+    private fun waitForVideoSwitchThenStart(
+        expectedVideoId: String,
+        sentence: SentenceTimestamp,
+        repeatCount: Int,
+        minWaitMs: Long = 0L
+    ) {
         val startAt = System.currentTimeMillis()
         repeatHandler.post(object : Runnable {
             override fun run() {
-                if (System.currentTimeMillis() - startAt > 8_000L) {
+                val elapsed = System.currentTimeMillis() - startAt
+                if (elapsed > 10_000L) {
                     statusTextView?.text = "Repeat failed: video switch timeout"
                     return
                 }
                 val current = resolveCurrentVideoId()
-                if (current == expectedVideoId) {
+                if (elapsed >= minWaitMs && current == expectedVideoId) {
                     startRepeatSession(sentence, repeatCount, expectedVideoId)
                     return
                 }
@@ -1019,10 +1080,10 @@ class OverlayService : Service() {
             when (s.state) {
                 RepeatState.SEEKING -> {
                     if (now - s.actionAtMs > 300L) {
-                        ChromePlaybackReader.seekToMs(this@OverlayService, s.startMs)
+                        ChromePlaybackReader.seekToMs(this@OverlayService, s.startMs, currentPlaybackTarget())
                         s.actionAtMs = now
                     }
-                    val pos = ChromePlaybackReader.readControllerPrecisePositionMs(this@OverlayService)
+                    val pos = ChromePlaybackReader.readControllerPrecisePositionMs(this@OverlayService, currentPlaybackTarget())
                     if (pos != null && kotlin.math.abs(pos - s.startMs) <= 650L) {
                         s.state = RepeatState.WAITING_FOR_PLAY
                         s.stateEnteredAtMs = now
@@ -1034,10 +1095,11 @@ class OverlayService : Service() {
 
                 RepeatState.WAITING_FOR_PLAY -> {
                     if (now - s.actionAtMs > 450L) {
-                        ChromePlaybackReader.play(this@OverlayService)
+                        PlaybackAudioHelper.ensureAudible(this@OverlayService)
+                        ChromePlaybackReader.play(this@OverlayService, currentPlaybackTarget())
                         s.actionAtMs = now
                     }
-                    val playing = ChromePlaybackReader.isControllerPlaying(this@OverlayService) == true
+                    val playing = ChromePlaybackReader.isControllerPlaying(this@OverlayService, currentPlaybackTarget()) == true
                     if (playing) {
                         s.state = RepeatState.PLAYING
                         s.stateEnteredAtMs = now
@@ -1047,7 +1109,7 @@ class OverlayService : Service() {
                 }
 
                 RepeatState.PLAYING -> {
-                    val pos = ChromePlaybackReader.readControllerPrecisePositionMs(this@OverlayService)
+                    val pos = ChromePlaybackReader.readControllerPrecisePositionMs(this@OverlayService, currentPlaybackTarget())
                     if (pos == null) {
                         s.state = RepeatState.FAILED
                     } else if (pos >= s.endMs) {
@@ -1064,11 +1126,11 @@ class OverlayService : Service() {
 
                 RepeatState.RESTARTING -> {
                     if (now - s.actionAtMs > 320L) {
-                        ChromePlaybackReader.pause(this@OverlayService)
-                        ChromePlaybackReader.seekToMs(this@OverlayService, s.startMs)
+                        ChromePlaybackReader.pause(this@OverlayService, currentPlaybackTarget())
+                        ChromePlaybackReader.seekToMs(this@OverlayService, s.startMs, currentPlaybackTarget())
                         s.actionAtMs = now
                     }
-                    val pos = ChromePlaybackReader.readControllerPrecisePositionMs(this@OverlayService)
+                    val pos = ChromePlaybackReader.readControllerPrecisePositionMs(this@OverlayService, currentPlaybackTarget())
                     if (pos != null && kotlin.math.abs(pos - s.startMs) <= 650L) {
                         s.state = RepeatState.WAITING_FOR_PLAY
                         s.stateEnteredAtMs = now
@@ -1090,7 +1152,7 @@ class OverlayService : Service() {
 
     private fun finalizeRepeat(cancelled: Boolean, failed: Boolean = false) {
         repeatHandler.removeCallbacksAndMessages(null)
-        runCatching { ChromePlaybackReader.pause(this) }
+        runCatching { ChromePlaybackReader.pause(this, currentPlaybackTarget()) }
         val s = repeatSession
         if (s != null) {
             statusTextView?.text = when {
@@ -1106,16 +1168,45 @@ class OverlayService : Service() {
     }
 
     private fun resolveCurrentSourceUrl(): String? {
+        val playbackTarget = currentPlaybackTarget()
+        val clipboardUrl = if (PlaybackTarget.isChrome(playbackTarget)) null else captureClipboardYoutubeUrl(showStatus = false)
         val observed = ChromeCaptureStore.getObservedUrl(this)
         val selected = prefs.getString(KEY_SELECTED_URL, null)
         val fallback = prefs.getString(KEY_LAST_URL, null)
-        return observed ?: selected ?: fallback
+        return if (PlaybackTarget.isChrome(playbackTarget)) {
+            observed ?: selected ?: fallback
+        } else {
+            clipboardUrl ?: selected ?: fallback ?: observed
+        }
     }
 
-    private fun resolveCurrentVideoId(): String? =
-        ChromePlaybackReader.readSnapshot(this)?.videoId
-            ?: ChromeCaptureStore.getObservedVideoId(this)
-            ?: resolveCurrentSourceUrl()?.let(YoutubeUrlParser::extractVideoId)
+    private fun resolveCurrentVideoId(): String? {
+        val playbackTarget = currentPlaybackTarget()
+        val snapshotVideoId = ChromePlaybackReader.readSnapshot(this, playbackTarget)?.videoId
+        val sourceVideoId = resolveCurrentSourceUrl()?.let(YoutubeUrlParser::extractVideoId)
+        val observedVideoId = ChromeCaptureStore.getObservedVideoId(this)
+        return if (PlaybackTarget.isChrome(playbackTarget)) {
+            snapshotVideoId ?: observedVideoId ?: sourceVideoId
+        } else {
+            snapshotVideoId ?: sourceVideoId ?: observedVideoId
+        }
+    }
+
+    private fun currentPlaybackTarget(): String =
+        PlaybackTarget.current(this)
+
+    private fun captureClipboardYoutubeUrl(showStatus: Boolean): String? {
+        val normalized = YoutubeClipboardReader.readYoutubeUrl(this) ?: return null
+        prefs.edit()
+            .putString(KEY_SELECTED_URL, normalized)
+            .putString(KEY_LAST_URL, normalized)
+            .apply()
+        ChromeCaptureStore.saveObservedUrl(this, normalized)
+        if (showStatus) {
+            statusTextView?.text = "Clipboard YouTube URL captured: $normalized"
+        }
+        return normalized
+    }
 
     private fun selectSavedContent(savedFile: java.io.File) {
         val contentDir = savedFile.parentFile ?: return
@@ -1249,18 +1340,51 @@ class OverlayService : Service() {
         }.trim()
     }
 
-    private fun openYoutubeTargetInChrome(target: String) {
+    private fun openYoutubeTarget(target: String, playbackTarget: String) {
         val uri = Uri.parse(target)
-        val chromeIntent = Intent(Intent.ACTION_VIEW, uri).apply {
-            setPackage("com.android.chrome")
+        val normalizedTarget = PlaybackTarget.normalize(playbackTarget)
+        val packageName = PlaybackTarget.mediaPackage(normalizedTarget)
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            setPackage(packageName)
+            addCategory(Intent.CATEGORY_BROWSABLE)
             putExtra(Browser.EXTRA_APPLICATION_ID, packageName)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            if (PlaybackTarget.isChrome(normalizedTarget)) {
+                putExtra(Browser.EXTRA_CREATE_NEW_TAB, false)
+                putExtra("create_new_tab", false)
+            }
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
-        val canOpen = chromeIntent.resolveActivity(packageManager) != null
-        if (canOpen) {
-            startActivity(chromeIntent)
-        } else {
-            startActivity(Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+        try {
+            startActivity(intent)
+        } catch (err: ActivityNotFoundException) {
+            if (PlaybackTarget.isChrome(normalizedTarget)) {
+                statusTextView?.text = "Chrome is not available."
+                return
+            }
+            openYoutubeTargetWithAppScheme(target, err)
+        } catch (err: SecurityException) {
+            statusTextView?.text = "Cannot open ${PlaybackTarget.label(normalizedTarget)}: ${err.message ?: "permission denied"}"
+        }
+    }
+
+    private fun openYoutubeTargetWithAppScheme(target: String, cause: Throwable) {
+        val videoId = YoutubeUrlParser.extractVideoId(target)
+        if (videoId.isNullOrBlank()) {
+            statusTextView?.text = "Cannot open YouTube app: ${cause.message ?: "video id missing"}"
+            return
+        }
+        val seconds = YoutubeUrlParser.extractSeconds(target).coerceAtLeast(0)
+        val appUri = Uri.parse("vnd.youtube:$videoId?start=$seconds")
+        val appIntent = Intent(Intent.ACTION_VIEW, appUri).apply {
+            setPackage(PlaybackTarget.YOUTUBE_PACKAGE)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        try {
+            startActivity(appIntent)
+        } catch (err: ActivityNotFoundException) {
+            statusTextView?.text = "YouTube app is not available."
+        } catch (err: SecurityException) {
+            statusTextView?.text = "Cannot open YouTube app: ${err.message ?: "permission denied"}"
         }
     }
 
@@ -1380,5 +1504,7 @@ class OverlayService : Service() {
         private const val MERGE_SEGMENT_OVERLAP_RATIO = 0.6
         private const val MERGE_WORD_TIME_EPS = 0.18
         private const val MERGE_WORD_OVERLAP_RATIO_LOOSE = 0.6
+        private const val FINAL_HARD_CUT_REPAIR_GAP_SEC = 0.28
+        private const val FINAL_HARD_CUT_REPAIR_MAX_SPAN_SEC = 30.0
     }
 }

@@ -10,7 +10,8 @@ data class DownloadedAudioSource(
     val path: String,
     val fromCache: Boolean,
     val cacheAgeSec: Long?,
-    val liveStatus: String?
+    val liveStatus: String?,
+    val title: String?
 )
 
 class YoutubeDirectUrlExtractor(private val context: Context) {
@@ -28,7 +29,8 @@ class YoutubeDirectUrlExtractor(private val context: Context) {
                 path = json.getString("path"),
                 fromCache = json.optBoolean("fromCache", false),
                 cacheAgeSec = json.optLong("cacheAgeSec", -1L).takeIf { it >= 0L },
-                liveStatus = json.optString("liveStatus").ifBlank { null }
+                liveStatus = json.optString("liveStatus").ifBlank { null },
+                title = json.optString("title").ifBlank { null }
             )
         }.getOrElse { err ->
             val root = generateSequence(err) { it.cause }.last()

@@ -19,10 +19,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startInput: EditText
     private lateinit var endInput: EditText
     private lateinit var apiKeyInput: EditText
+    private lateinit var playbackTargetGroup: RadioGroup
     private lateinit var sttModeGroup: RadioGroup
     private lateinit var onDeviceProfileGroup: RadioGroup
     private lateinit var onDeviceProfileLabel: TextView
     private lateinit var statusText: TextView
+    private var clipboardStatusUntilMs = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val chromePoller = object : Runnable {
         override fun run() {
@@ -39,12 +41,28 @@ class MainActivity : AppCompatActivity() {
         startInput = findViewById(R.id.startInput)
         endInput = findViewById(R.id.endInput)
         apiKeyInput = findViewById(R.id.apiKeyInput)
+        playbackTargetGroup = findViewById(R.id.playbackTargetGroup)
         sttModeGroup = findViewById(R.id.sttModeGroup)
         onDeviceProfileGroup = findViewById(R.id.onDeviceProfileGroup)
         onDeviceProfileLabel = findViewById(R.id.onDeviceProfileLabel)
         statusText = findViewById(R.id.statusText)
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         apiKeyInput.setText(prefs.getString(KEY_API_KEY, ""))
+        val playbackTarget = prefs.getString(PlaybackTarget.KEY_PLAYBACK_TARGET, PlaybackTarget.CHROME)
+        playbackTargetGroup.check(
+            if (playbackTarget == PlaybackTarget.YOUTUBE_APP) {
+                R.id.playbackTargetYoutubeApp
+            } else {
+                R.id.playbackTargetChrome
+            }
+        )
+        playbackTargetGroup.setOnCheckedChangeListener { _, _ ->
+            prefs.edit()
+                .putString(PlaybackTarget.KEY_PLAYBACK_TARGET, selectedPlaybackTarget())
+                .apply()
+            maybeCaptureYoutubeUrlFromClipboard(showStatus = true)
+            refreshChromeConnection()
+        }
         val mode = prefs.getString(KEY_STT_MODE, STT_MODE_API)
         sttModeGroup.check(if (mode == STT_MODE_ON_DEVICE) R.id.sttModeOnDevice else R.id.sttModeApi)
         val profile = prefs.getString(KEY_ON_DEVICE_PROFILE, ON_DEVICE_PROFILE_ACCURATE)
@@ -64,11 +82,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         handleIncomingIntent(intent)
+        maybeCaptureYoutubeUrlFromClipboard(showStatus = false)
         refreshChromeConnection()
     }
 
     override fun onResume() {
         super.onResume()
+        maybeCaptureYoutubeUrlFromClipboard(showStatus = true)
         mainHandler.post(chromePoller)
     }
 
@@ -93,28 +113,84 @@ class MainActivity : AppCompatActivity() {
         val normalized = YoutubeUrlParser.normalizeUrl(candidate)
         if (normalized != null) {
             ChromeCaptureStore.saveObservedUrl(this, normalized)
+            saveSelectedUrl(normalized)
             urlText.text = normalized
         }
     }
 
     private fun refreshChromeConnection() {
+        val target = selectedPlaybackTarget()
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val observed = ChromeCaptureStore.getObservedUrl(this)
-        if (observed != null) {
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                .putString(KEY_SELECTED_URL, observed)
-                .putString(KEY_LAST_URL, observed)
-                .apply()
-            urlText.text = observed
-            statusText.text = if (isNotificationListenerEnabled()) {
-                getString(R.string.status_idle)
-            } else {
-                getString(R.string.status_waiting_media_listener)
-            }
+        val saved = prefs.getString(KEY_SELECTED_URL, null) ?: prefs.getString(KEY_LAST_URL, null)
+        val displayUrl = if (PlaybackTarget.isChrome(target)) {
+            observed ?: saved
+        } else {
+            saved ?: observed
+        }
+
+        if (PlaybackTarget.isChrome(target) && observed != null) {
+            saveSelectedUrl(observed)
+        }
+        if (!displayUrl.isNullOrBlank()) {
+            urlText.text = displayUrl
+        }
+        if (System.currentTimeMillis() < clipboardStatusUntilMs) {
             return
         }
-        if (!isAccessibilityEnabled()) {
-            statusText.text = getString(R.string.status_waiting_accessibility)
+
+        statusText.text = when {
+            !isNotificationListenerEnabled() -> getString(R.string.status_waiting_media_listener)
+            PlaybackTarget.isChrome(target) && !isAccessibilityEnabled() -> getString(R.string.status_waiting_accessibility)
+            !PlaybackTarget.isChrome(target) && displayUrl.isNullOrBlank() -> getString(R.string.status_waiting_youtube_url)
+            else -> getString(R.string.status_idle)
         }
+    }
+
+    private fun saveSelectedUrl(url: String) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(KEY_SELECTED_URL, url)
+            .putString(KEY_LAST_URL, url)
+            .apply()
+    }
+
+    private fun maybeCaptureYoutubeUrlFromClipboard(showStatus: Boolean): String? {
+        if (PlaybackTarget.isChrome(selectedPlaybackTarget())) return null
+        val normalized = YoutubeClipboardReader.readYoutubeUrl(this) ?: return null
+        val current = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_SELECTED_URL, null)
+        saveSelectedUrl(normalized)
+        ChromeCaptureStore.saveObservedUrl(this, normalized)
+        urlText.text = normalized
+        if (showStatus || current != normalized) {
+            statusText.text = "Clipboard YouTube URL captured: $normalized"
+            clipboardStatusUntilMs = System.currentTimeMillis() + 8_000L
+        }
+        return normalized
+    }
+
+    private fun isAccessibilityRequired(): Boolean =
+        PlaybackTarget.isChrome(selectedPlaybackTarget())
+
+    private fun selectedPlaybackTarget(): String {
+        return if (playbackTargetGroup.checkedRadioButtonId == R.id.playbackTargetYoutubeApp) {
+            PlaybackTarget.YOUTUBE_APP
+        } else {
+            PlaybackTarget.CHROME
+        }
+    }
+
+    private fun ensureRequiredCaptureServices(): Boolean {
+        if (isAccessibilityRequired() && !isAccessibilityEnabled()) {
+            statusText.text = getString(R.string.status_waiting_accessibility)
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            return false
+        }
+        if (!isNotificationListenerEnabled()) {
+            statusText.text = getString(R.string.status_waiting_media_listener)
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            return false
+        }
+        return true
     }
 
     private fun isAccessibilityEnabled(): Boolean {
@@ -159,6 +235,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_API_KEY, apiKey)
             .putString(KEY_SELECTED_URL, sourceUrl)
             .putString(KEY_LAST_URL, sourceUrl)
+            .putString(PlaybackTarget.KEY_PLAYBACK_TARGET, selectedPlaybackTarget())
             .putString(KEY_STT_MODE, mode)
             .putString(KEY_ON_DEVICE_PROFILE, selectedOnDeviceProfile())
             .apply()
@@ -194,23 +271,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startOverlayMode(startSec: Int? = null, endSec: Int? = null) {
-        if (!isAccessibilityEnabled()) {
-            statusText.text = getString(R.string.status_waiting_accessibility)
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            return
-        }
-        if (!isNotificationListenerEnabled()) {
-            statusText.text = getString(R.string.status_waiting_media_listener)
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-            return
-        }
+        val playbackTarget = selectedPlaybackTarget()
+        if (!ensureRequiredCaptureServices()) return
         if (!Settings.canDrawOverlays(this)) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             return
         }
 
         val selectedUrl = YoutubeUrlParser.normalizeUrl(urlText.text?.toString())
-            ?: ChromeCaptureStore.getObservedUrl(this)
+            ?: maybeCaptureYoutubeUrlFromClipboard(showStatus = true)
+            ?: if (PlaybackTarget.isChrome(playbackTarget)) ChromeCaptureStore.getObservedUrl(this) else null
+        if (!PlaybackTarget.isChrome(playbackTarget) && selectedUrl.isNullOrBlank()) {
+            statusText.text = getString(R.string.status_waiting_youtube_url)
+            return
+        }
         val apiKey = apiKeyInput.text?.toString().orEmpty().trim()
         val mode = selectedSttMode()
         val profile = selectedOnDeviceProfile()
@@ -218,6 +292,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_API_KEY, apiKey)
             .putString(KEY_SELECTED_URL, selectedUrl)
             .putString(KEY_LAST_URL, selectedUrl)
+            .putString(PlaybackTarget.KEY_PLAYBACK_TARGET, playbackTarget)
             .putString(KEY_STT_MODE, mode)
             .putString(KEY_ON_DEVICE_PROFILE, profile)
             .apply()

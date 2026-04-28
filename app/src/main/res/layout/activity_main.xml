@@ -22,6 +22,32 @@
             android:text="@string/no_url"
             android:textIsSelectable="true" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/playback_target_label" />
+
+        <RadioGroup
+            android:id="@+id/playbackTargetGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/playbackTargetChrome"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/playback_target_chrome" />
+
+            <RadioButton
+                android:id="@+id/playbackTargetYoutubeApp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/playback_target_youtube_app" />
+        </RadioGroup>
+
         <Button
             android:id="@+id/openAccessibilityButton"
             android:layout_width="match_parent"

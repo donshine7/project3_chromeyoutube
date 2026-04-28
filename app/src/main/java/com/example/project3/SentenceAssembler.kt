@@ -568,6 +568,7 @@ class SentenceAssembler {
         if (t0 == "these" && t1 == "abrupt") return true
         if (t0 == "the" && t1 == "international") return true
         if (t0 == "so" && t1 == "if") return true
+        if (t0 == "so" && (t1 == "i'm" || t1 == "im" || t1 == "i")) return true
         if (t0 == "when") return true
         return false
     }
@@ -796,7 +797,14 @@ class SentenceAssembler {
                 gap <= 0.20 &&
                 combinedDur <= 18.0 &&
                 (endsWithIncompleteTail(cur.text) || protectsTextBoundary(cur.text, next.text))
-            shortTailJoin || continuationJoin || incompleteTailJoin
+            val hardCutRepairJoin = !endsSentence(cur.text) &&
+                gap <= HARD_CUT_REPAIR_GAP_SEC &&
+                combinedDur <= HARD_CUT_REPAIR_MAX_SPAN_SEC &&
+                wordCount(cur.text) >= 4 &&
+                wordCount(next.text) >= 2 &&
+                !startsClearSentenceStarterText(next.text) &&
+                !startsDiscourseStarterText(next.text)
+            shortTailJoin || continuationJoin || incompleteTailJoin || hardCutRepairJoin
         }
     }
 
@@ -890,6 +898,30 @@ class SentenceAssembler {
             normalized.startsWith("now ")
     }
 
+    private fun startsClearSentenceStarterText(text: String): Boolean {
+        val tokens = text.trim()
+            .split(Regex("\\s+"))
+            .map { normalizeToken(it) }
+            .filter { it.isNotBlank() }
+        val t0 = tokens.getOrNull(0) ?: return false
+        val t1 = tokens.getOrNull(1).orEmpty()
+        val t2 = tokens.getOrNull(2).orEmpty()
+        if (t0 in DIALOGUE_STARTERS) return true
+        if (t0 == "according" && t1 == "to") return true
+        if (t0 == "right" && t1 == "i" && t2 == "mean") return true
+        if (t0 == "i" && t1 == "mean") return true
+        if (t0 == "this" && t1 == "abrupt") return true
+        if (t0 == "these" && t1 == "abrupt") return true
+        if (t0 == "the" && t1 == "international") return true
+        if (t0 == "so" && t1 == "if") return true
+        if (t0 == "so" && (t1 == "i'm" || t1 == "im" || t1 == "i")) return true
+        if (t0 == "when") return true
+        if (t0 == "at") return true
+        if (t0 == "google" && t1 == "recently") return true
+        if (t0 in LOWERCASE_SENTENCE_STARTERS && t1 in SUBJECT_SECOND_WORDS) return true
+        return false
+    }
+
     companion object {
         private const val TAG = "SentenceAssembler"
         private const val MIN_VALID_WORD_SEC = 0.01
@@ -905,6 +937,8 @@ class SentenceAssembler {
         private const val HARD_MAX_SPAN_SEC_SOFT = 16.0
         private const val HARD_MAX_WORDS_EMERGENCY = 72
         private const val HARD_MAX_SPAN_SEC_EMERGENCY = 22.0
+        private const val HARD_CUT_REPAIR_GAP_SEC = 0.28
+        private const val HARD_CUT_REPAIR_MAX_SPAN_SEC = 30.0
         private const val HARD_SILENCE_SEC = 1.05
         private const val HARD_SILENCE_CONTINUATION_SEC = 1.25
         private const val INTERNAL_CUT_MIN_SCORE = 1.9

@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Project3 Chrome YouTube STT</string>
+    <string name="app_name">Project3 YouTube STT</string>
     <string name="accessibility_service_label">Chrome URL Capture Service</string>
     <string name="current_url_label">Captured YouTube URL</string>
     <string name="no_url">(No URL yet)</string>
+    <string name="playback_target_label">Playback Target</string>
+    <string name="playback_target_chrome">Chrome YouTube</string>
+    <string name="playback_target_youtube_app">YouTube App</string>
     <string name="hint_start_time">Start (e.g. 07:00 or 00:07:00)</string>
     <string name="hint_end_time">End (e.g. 08:00 or 00:08:00)</string>
     <string name="hint_api_key">OpenAI API Key (sk-...)</string>
@@ -19,6 +22,7 @@
     <string name="action_download_and_stt">Download segment and run STT</string>
     <string name="status_idle">Idle</string>
     <string name="status_waiting_accessibility">Accessibility is off. Enable Chrome capture service.</string>
+    <string name="status_waiting_youtube_url">YouTube app mode: share a YouTube link to Project3 first.</string>
     <string name="status_waiting_media_listener">Notification listener is off. Enable media capture.</string>
     <string name="status_overlay_started">Overlay mode started.</string>
     <string name="status_stage_downloading">Downloading full audio with yt-dlp...</string>

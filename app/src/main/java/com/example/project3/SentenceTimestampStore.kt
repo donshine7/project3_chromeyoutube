@@ -15,6 +15,7 @@ class SentenceTimestampStore(context: Context) {
 
     fun save(
         youtubeUrl: String,
+        videoTitle: String? = null,
         sentences: List<SentenceTimestamp>,
         replaceStartSec: Double? = null,
         replaceEndSec: Double? = null
@@ -39,6 +40,9 @@ class SentenceTimestampStore(context: Context) {
             put("youtubeUrl", canonicalUrl)
             put("savedAt", System.currentTimeMillis())
             put("videoId", videoId)
+            if (!videoTitle.isNullOrBlank()) {
+                put("videoTitle", videoTitle.trim())
+            }
             put("timestampsAbsolute", true)
             put("sentences", JSONArray().apply {
                 merged.forEach { s ->
@@ -86,6 +90,13 @@ class SentenceTimestampStore(context: Context) {
         val latest = latestJson(folder.path) ?: return null
         val raw = runCatching { JSONObject(latest.readText()).optString("youtubeUrl") }.getOrNull()
         return YoutubeUrlParser.canonicalWatchUrlFromAny(raw)
+    }
+
+    fun loadVideoTitle(folder: FolderEntry): String? {
+        val latest = latestJson(folder.path) ?: return null
+        return runCatching {
+            JSONObject(latest.readText()).optString("videoTitle").trim().takeIf { it.isNotBlank() }
+        }.getOrNull()
     }
 
     fun deleteSentence(folder: FolderEntry, target: SentenceTimestamp): Boolean {
