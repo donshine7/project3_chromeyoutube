@@ -13,7 +13,12 @@ class SentenceTimestampStore(context: Context) {
 
     data class FolderEntry(val date: String, val contentId: String, val path: File)
 
-    fun save(youtubeUrl: String, sentences: List<SentenceTimestamp>): File {
+    fun save(
+        youtubeUrl: String,
+        sentences: List<SentenceTimestamp>,
+        replaceStartSec: Double? = null,
+        replaceEndSec: Double? = null
+    ): File {
         val now = Date()
         val dateFolder = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)
         val canonicalUrl = YoutubeUrlParser.canonicalWatchUrlFromAny(youtubeUrl) ?: youtubeUrl
@@ -21,7 +26,13 @@ class SentenceTimestampStore(context: Context) {
         val dateDir = File(root, dateFolder).apply { mkdirs() }
         val contentDir = resolveContentDir(dateDir, canonicalUrl, videoId, now)
         val file = File(contentDir, "sentences-${SimpleDateFormat("HHmmss", Locale.US).format(now)}.json")
-        val merged = (loadLatestSentences(contentDir) + sentences)
+        val existing = loadLatestSentences(contentDir)
+        val keptExisting = if (replaceStartSec != null && replaceEndSec != null && replaceEndSec > replaceStartSec) {
+            existing.filterNot { it.endSec > replaceStartSec - 0.5 && it.startSec < replaceEndSec + 0.5 }
+        } else {
+            existing
+        }
+        val merged = (keptExisting + sentences)
             .distinctBy { "${it.startSec}|${it.endSec}|${it.text}" }
             .sortedBy { it.startSec }
         val payload = JSONObject().apply {
@@ -35,9 +46,6 @@ class SentenceTimestampStore(context: Context) {
                         put("startSec", s.startSec)
                         put("endSec", s.endSec)
                         put("text", s.text)
-                        if (!s.translatedTextKo.isNullOrBlank()) {
-                            put("translatedTextKo", s.translatedTextKo)
-                        }
                     })
                 }
             })
@@ -66,8 +74,7 @@ class SentenceTimestampStore(context: Context) {
                         SentenceTimestamp(
                             startSec = item.optDouble("startSec", 0.0),
                             endSec = item.optDouble("endSec", 0.0),
-                            text = item.optString("text", ""),
-                            translatedTextKo = item.optString("translatedTextKo").ifBlank { null }
+                            text = item.optString("text", "")
                         )
                     )
                 }
@@ -94,9 +101,6 @@ class SentenceTimestampStore(context: Context) {
                     put("startSec", s.startSec)
                     put("endSec", s.endSec)
                     put("text", s.text)
-                    if (!s.translatedTextKo.isNullOrBlank()) {
-                        put("translatedTextKo", s.translatedTextKo)
-                    }
                 })
             }
         })
@@ -125,34 +129,12 @@ class SentenceTimestampStore(context: Context) {
                         SentenceTimestamp(
                             startSec = item.optDouble("startSec", 0.0),
                             endSec = item.optDouble("endSec", 0.0),
-                            text = item.optString("text", ""),
-                            translatedTextKo = item.optString("translatedTextKo").ifBlank { null }
+                            text = item.optString("text", "")
                         )
                     )
                 }
             }
         }.getOrElse { emptyList() }
-    }
-
-    fun updateSentenceTranslation(folder: FolderEntry, target: SentenceTimestamp, translatedKo: String): Boolean {
-        val latest = latestJson(folder.path) ?: return false
-        val rootJson = runCatching { JSONObject(latest.readText()) }.getOrElse { return false }
-        val arr = rootJson.optJSONArray("sentences") ?: return false
-        var changed = false
-        for (i in 0 until arr.length()) {
-            val item = arr.optJSONObject(i) ?: continue
-            val startSec = item.optDouble("startSec", Double.NaN)
-            val endSec = item.optDouble("endSec", Double.NaN)
-            val text = item.optString("text", "")
-            if (startSec == target.startSec && endSec == target.endSec && text == target.text) {
-                item.put("translatedTextKo", translatedKo)
-                changed = true
-                break
-            }
-        }
-        if (!changed) return false
-        latest.writeText(rootJson.toString(2))
-        return true
     }
 
     private fun resolveContentDir(dateDir: File, canonicalUrl: String, videoId: String, now: Date): File {

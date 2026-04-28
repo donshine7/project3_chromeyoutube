@@ -7,15 +7,12 @@ object YoutubeUrlParser {
         val trimmed = raw?.trim().orEmpty()
         if (trimmed.isBlank()) return null
 
-        val direct = canonicalWatchUrl(extractVideoId(trimmed))
+        val direct = canonicalWatchUrl(extractVideoId(withHttpsIfYoutube(trimmed)))
         if (direct != null) return direct
 
-        // Chrome accessibility text often omits scheme (e.g. youtube.com/watch?v=...).
-        val fromText = Regex(
-            """((?:https?://)?(?:www\.)?(?:m\.)?(?:youtube\.com|youtu\.be)/[^\s]+)""",
-            RegexOption.IGNORE_CASE
-        ).find(trimmed)?.value?.trimEnd('.', ',', ')', ']', '}', '>')
-        return canonicalWatchUrl(extractVideoId(fromText))
+        val fromText = YOUTUBE_TEXT_PATTERN.find(trimmed)?.value
+        val normalizedCandidate = withHttpsIfYoutube(stripTrailingPunctuation(fromText))
+        return canonicalWatchUrl(extractVideoId(normalizedCandidate))
     }
 
     fun canonicalWatchUrl(videoId: String?): String? {
@@ -29,8 +26,8 @@ object YoutubeUrlParser {
 
     fun extractVideoId(rawUrl: String?): String? {
         if (rawUrl.isNullOrBlank()) return null
-        val candidate = rawUrl.trim()
-        val uri = parseYoutubeUri(candidate) ?: return null
+        val candidate = withHttpsIfYoutube(stripTrailingPunctuation(rawUrl.trim()))
+        val uri = runCatching { Uri.parse(candidate) }.getOrNull() ?: return null
         val host = uri.host?.lowercase().orEmpty()
 
         return when {
@@ -50,18 +47,23 @@ object YoutubeUrlParser {
         }?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }
     }
 
-    private fun parseYoutubeUri(raw: String): Uri? {
-        val direct = runCatching { Uri.parse(raw) }.getOrNull()
-        val directHost = direct?.host?.lowercase().orEmpty()
-        if (direct != null && (directHost.contains("youtube.com") || directHost.endsWith("youtu.be"))) {
-            return direct
+    private fun withHttpsIfYoutube(value: String): String {
+        val lower = value.lowercase()
+        return if (
+            lower.startsWith("youtube.com/") ||
+            lower.startsWith("www.youtube.com/") ||
+            lower.startsWith("m.youtube.com/") ||
+            lower.startsWith("youtu.be/")
+        ) {
+            "https://$value"
+        } else {
+            value
         }
-        val withScheme = runCatching {
-            if (raw.startsWith("http://", true) || raw.startsWith("https://", true)) Uri.parse(raw)
-            else Uri.parse("https://$raw")
-        }.getOrNull()
-        val host = withScheme?.host?.lowercase().orEmpty()
-        return withScheme?.takeIf { host.contains("youtube.com") || host.endsWith("youtu.be") }
+    }
+
+    private fun stripTrailingPunctuation(value: String?): String {
+        if (value.isNullOrBlank()) return value.orEmpty()
+        return value.trim().trimEnd(')', ']', '}', ',', '.', ';', ':', '"', '\'')
     }
 
     fun extractSeconds(rawUrl: String?): Int {
@@ -76,4 +78,9 @@ object YoutubeUrlParser {
             trimmed.toIntOrNull() ?: 0
         }.coerceAtLeast(0)
     }
+
+    private val YOUTUBE_TEXT_PATTERN = Regex(
+        """((https?://)?((www|m)\.)?(youtube\.com|youtu\.be)/[^\s]+)""",
+        RegexOption.IGNORE_CASE
+    )
 }

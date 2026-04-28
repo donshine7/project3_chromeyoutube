@@ -39,6 +39,7 @@ class OverlayService : Service() {
     private var overlayParams: WindowManager.LayoutParams? = null
 
     private var statusTextView: TextView? = null
+    private var perfTextView: TextView? = null
     private var outputTextView: TextView? = null
     private var outputScrollView: ScrollView? = null
     private var toggleButton: Button? = null
@@ -70,11 +71,15 @@ class OverlayService : Service() {
     private var repeatCancelled = false
     private var activeSentenceKey: String? = null
     private var expandedSentenceKey: String? = null
+    private var lastPerfSummary: String? = null
     private val showKoreanKeys = mutableSetOf<String>()
     private val translationLoadingKeys = mutableSetOf<String>()
+    private val translatedTextByKey = mutableMapOf<String, String>()
     private var pendingAutoRange: Pair<Int, Int>? = null
 
     private data class SttChunk(
+        val validStartSec: Int,
+        val validEndSec: Int,
         val transcribeStartSec: Int,
         val transcribeEndSec: Int
     )
@@ -153,6 +158,11 @@ class OverlayService : Service() {
             ellipsize = TextUtils.TruncateAt.END
             text = buildCaptureStatus()
         }
+        perfTextView = TextView(this).apply {
+            setTextColor(0xFF80CBC4.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f * FONT_SCALE)
+            text = "Perf: -"
+        }
         toggleButton = Button(this).apply {
             text = "Set Start"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
@@ -208,6 +218,7 @@ class OverlayService : Service() {
 
         root.addView(title)
         root.addView(statusTextView)
+        root.addView(perfTextView)
         root.addView(controlsRow)
         root.addView(outputScrollView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)))
         root.addView(folderRow)
@@ -325,13 +336,15 @@ class OverlayService : Service() {
         val chunks = if (useChunking) {
             buildFastChunks(startSec, endSec)
         } else {
-            listOf(SttChunk(transcribeStartSec, transcribeEndSec))
+            listOf(SttChunk(startSec, endSec, transcribeStartSec, transcribeEndSec))
         }
+        val chunkBoundaries = chunks.dropLast(1).map { it.validEndSec.toDouble() }
         val sttEngine = SttEngineFactory.create(this, sttMode, onDeviceProfile)
         val apiKey = prefs.getString(KEY_API_KEY, null)?.takeIf { it.isNotBlank() }
         val sourceUrl = resolveCurrentSourceUrl()
         if ((sttMode == SttEngineFactory.MODE_API && apiKey.isNullOrBlank()) || sourceUrl.isNullOrBlank()) {
             pipelineRunning = false
+            updatePerfSummary(null)
             statusTextView?.text = if (sourceUrl.isNullOrBlank()) {
                 "Missing URL."
             } else {
@@ -339,6 +352,7 @@ class OverlayService : Service() {
             }
             return
         }
+        updatePerfSummary(null)
         setOutputText("")
         statusTextView?.text = "Downloading with yt-dlp..."
         thread(name = "overlay-stt") {
@@ -423,27 +437,56 @@ class OverlayService : Service() {
                     val sttMs = System.currentTimeMillis() - sttStart
                     sttElapsedMs += sttMs
                     chunkSttMs += sttMs
+                    val partialPerf = buildPerfSummary(sttElapsedMs, requestedDurationSec)
                     Log.i(
                         tag,
                         "chunkTiming idx=${index + 1}/${chunks.size} range=${chunk.transcribeStartSec}-${chunk.transcribeEndSec} " +
                             "cut=${cutMs}ms stt=${sttMs}ms segs=${transcript.segments?.size ?: 0} words=${transcript.words?.size ?: 0}"
                     )
                     chunkTranscripts += offsetTranscript(transcript, chunk.transcribeStartSec)
+                    val partialMerge = mergeWhisperResults(chunkTranscripts)
+                    val partialSentences = sentenceAssembler.build(
+                        partialMerge.result,
+                        startSec.toDouble(),
+                        endSec.toDouble(),
+                        chunkBoundaries
+                    )
+                    mainHandler.post {
+                        setOutputText(renderSentenceResult(partialSentences))
+                        updatePerfSummary("$partialPerf (partial ${index + 1}/${chunks.size})")
+                        if (index + 1 < chunks.size) {
+                            statusTextView?.text = "Chunk ${index + 1}/${chunks.size} done. Processing next..."
+                        }
+                    }
                 }
                 val assembleStart = System.currentTimeMillis()
                 val merge = mergeWhisperResults(chunkTranscripts)
                 val merged = merge.result
-                val sentences = sentenceAssembler.build(merged, startSec.toDouble(), endSec.toDouble())
+                val sentencesRaw = sentenceAssembler.build(
+                    merged,
+                    startSec.toDouble(),
+                    endSec.toDouble(),
+                    chunkBoundaries
+                )
+                val sentences = finalCleanupSentences(sentencesRaw)
                 val tAssemble = System.currentTimeMillis()
                 val canonical = YoutubeUrlParser.canonicalWatchUrlFromAny(sourceUrl) ?: sourceUrl
-                val saveFile = sentenceStore.save(canonical, sentences)
+                val saveFile = sentenceStore.save(
+                    youtubeUrl = canonical,
+                    sentences = sentences,
+                    replaceStartSec = startSec.toDouble(),
+                    replaceEndSec = endSec.toDouble()
+                )
                 val tSave = System.currentTimeMillis()
+                val perfSummary = buildPerfSummary(sttElapsedMs, requestedDurationSec)
                 Log.i(
                     tag,
                     "timing mode=$sttMode profile=$onDeviceProfile pad=${padBeforeSec}/${padAfterSec} " +
                         "chunks=${chunks.size} " +
                         "download=${tDownload - t0}ms cut=${cutElapsedMs}ms " +
                         "stt=${sttElapsedMs}ms assemble=${tAssemble - assembleStart}ms save=${tSave - tAssemble}ms " +
+                        "wordTs=1 wordsRaw=${merge.sourceWordCount} wordsDeduped=${merge.dedupedWordCount} " +
+                        "sentencesRaw=${sentencesRaw.size} sentencesFinal=${sentences.size} " +
                         "chunkCutMs=[${chunkCutMs.joinToString(",")}] chunkSttMs=[${chunkSttMs.joinToString(",")}] " +
                         "mergeSegments=${merge.dedupedSegmentCount}/${merge.sourceSegmentCount} " +
                         "mergeWords=${merge.dedupedWordCount}/${merge.sourceWordCount} " +
@@ -451,7 +494,8 @@ class OverlayService : Service() {
                 )
                 mainHandler.post {
                     setOutputText(renderSentenceResult(sentences))
-                    statusTextView?.text = "STT done: ${saveFile.name}"
+                    statusTextView?.text = "STT done: ${saveFile.name} | $perfSummary"
+                    updatePerfSummary(perfSummary)
                     selectSavedContent(saveFile)
                     refreshSentenceButtons()
                 }
@@ -459,6 +503,7 @@ class OverlayService : Service() {
                 mainHandler.post {
                     val detail = summarizeError(err)
                     statusTextView?.text = "STT failed: $detail"
+                    updatePerfSummary("failed")
                 }
                 Log.e(tag, "runStt failed", err)
             }
@@ -478,14 +523,19 @@ class OverlayService : Service() {
             val transcribeStart = if (currentStart == requestStartSec) {
                 (currentStart - FAST_CHUNK_EDGE_PAD_SEC).coerceAtLeast(0)
             } else {
-                currentStart
+                (currentStart - FAST_CHUNK_INTERNAL_PAD_SEC).coerceAtLeast(0)
             }
             val transcribeEnd = if (currentEnd >= requestEndSec) {
                 (currentEnd + FAST_CHUNK_EDGE_PAD_SEC).coerceAtLeast(transcribeStart + 1)
             } else {
-                currentEnd.coerceAtLeast(transcribeStart + 1)
+                (currentEnd + FAST_CHUNK_INTERNAL_PAD_SEC).coerceAtLeast(transcribeStart + 1)
             }
-            result += SttChunk(transcribeStart, transcribeEnd)
+            result += SttChunk(
+                validStartSec = currentStart,
+                validEndSec = currentEnd,
+                transcribeStartSec = transcribeStart,
+                transcribeEndSec = transcribeEnd
+            )
             if (currentEnd >= requestEndSec) break
             currentStart = (currentEnd - FAST_CHUNK_OVERLAP_SEC).coerceAtLeast(currentStart + 1)
         }
@@ -538,7 +588,10 @@ class OverlayService : Service() {
                     kotlin.math.abs(prev.start - word.start) <= MERGE_WORD_TIME_EPS &&
                     kotlin.math.abs(prev.end - word.end) <= MERGE_WORD_TIME_EPS &&
                     normalizeMergeText(prev.word) == normalizeMergeText(word.word)
-                if (!nearDuplicate) acc += word
+                val looseDuplicate = prev != null &&
+                    normalizeMergeText(prev.word) == normalizeMergeText(word.word) &&
+                    overlapRatio(prev.start, prev.end, word.start, word.end) >= MERGE_WORD_OVERLAP_RATIO_LOOSE
+                if (!nearDuplicate && !looseDuplicate) acc += word
                 acc
             }
         val mergedText = if (mergedSegments.isNotEmpty()) {
@@ -563,6 +616,131 @@ class OverlayService : Service() {
 
     private fun normalizeMergeText(raw: String): String =
         raw.lowercase().replace(Regex("\\s+"), " ").trim()
+
+    private fun finalCleanupSentences(raw: List<SentenceTimestamp>): List<SentenceTimestamp> {
+        if (raw.isEmpty()) return raw
+        val sorted = raw.sortedBy { it.startSec }
+        val merged = mutableListOf<SentenceTimestamp>()
+        var i = 0
+        while (i < sorted.size) {
+            val cur = sorted[i]
+            if (i + 1 < sorted.size) {
+                val next = sorted[i + 1]
+                val gap = (next.startSec - cur.endSec).coerceAtLeast(0.0)
+                val continuationJoin = !endsSentenceText(cur.text) &&
+                    startsContinuationText(next.text) &&
+                    gap <= 0.45 &&
+                    (next.endSec - cur.startSec) <= 10.0
+                val incompleteTailJoin = !endsSentenceText(cur.text) &&
+                    gap <= 0.20 &&
+                    (next.endSec - cur.startSec) <= 18.0 &&
+                    (endsWithIncompleteTailText(cur.text) || protectsTextBoundary(cur.text, next.text))
+                if (continuationJoin || incompleteTailJoin) {
+                    merged += cur.copy(
+                        endSec = next.endSec,
+                        text = "${cur.text} ${next.text}".replace(Regex("\\s+"), " ").trim()
+                    )
+                    Log.d(
+                        tag,
+                        "finalCleanup join_${if (incompleteTailJoin) "incomplete" else "continuation"} gap=${"%.2f".format(gap)}"
+                    )
+                    i += 2
+                    continue
+                }
+            }
+            merged += cur
+            i += 1
+        }
+
+        val filtered = mutableListOf<SentenceTimestamp>()
+        for (idx in merged.indices) {
+            val cur = merged[idx]
+            val words = cur.text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+            val dur = (cur.endSec - cur.startSec).coerceAtLeast(0.0)
+            val prev = filtered.lastOrNull()
+            val next = merged.getOrNull(idx + 1)
+            val prevGap = prev?.let { (cur.startSec - it.endSec).coerceAtLeast(0.0) } ?: 99.0
+            val nextGap = next?.let { (it.startSec - cur.endSec).coerceAtLeast(0.0) } ?: 99.0
+            val tinySingle = words.size <= 1 && dur < 1.0
+            val repeatSingle = tinySingle && prev != null && normalizeMergeText(prev.text) == normalizeMergeText(cur.text)
+            if (repeatSingle) {
+                Log.d(tag, "finalCleanup drop_duplicate_short text=${cur.text}")
+                continue
+            }
+            filtered += cur
+        }
+        return filtered
+    }
+
+    private fun startsContinuationText(text: String): Boolean {
+        val token = text.trimStart()
+            .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
+            .split(" ")
+            .firstOrNull()
+            ?.trim(',', ';', ':', '.', '!', '?')
+            ?.lowercase()
+            ?: return false
+        return token in setOf("to", "for", "of", "by", "in", "on", "with", "from", "that", "which", "because", "prove", "using")
+    }
+
+    private fun endsWithIncompleteTailText(text: String): Boolean {
+        val token = lastTokenText(text) ?: return false
+        return token in setOf(
+            "to",
+            "for",
+            "of",
+            "by",
+            "in",
+            "on",
+            "with",
+            "from",
+            "during",
+            "between",
+            "and",
+            "or",
+            "the",
+            "a",
+            "an"
+        )
+    }
+
+    private fun protectsTextBoundary(curText: String, nextText: String): Boolean {
+        val prev = lastTokenText(curText) ?: return false
+        val next = firstTokenText(nextText) ?: return false
+        if (prev == "south" && next == "korea") return true
+        if (prev == "google" && next == "deepmind") return true
+        if (prev == "alpha" && next == "go") return true
+        if (prev == "seung" && next == "hyun") return true
+        if (prev == "lee" && next == "sedol") return true
+        if (prev == "yoon" && next == "koo") return true
+        return false
+    }
+
+    private fun firstTokenText(text: String): String? =
+        text.trim()
+            .split(Regex("\\s+"))
+            .firstOrNull()
+            ?.trim(',', ';', ':', '.', '!', '?', ')', ']', '"', '\'')
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+
+    private fun lastTokenText(text: String): String? =
+        text.trim()
+            .split(Regex("\\s+"))
+            .lastOrNull()
+            ?.trim(',', ';', ':', '.', '!', '?', ')', ']', '"', '\'')
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+
+    private fun isStandaloneUtterance(text: String): Boolean {
+        val normalized = text.trim().trimEnd('.', '!', '?').lowercase()
+        return normalized in setOf("ok", "yes", "no", "yeah", "mm", "one", "right", "alone")
+    }
+
+    private fun endsSentenceText(text: String): Boolean {
+        val t = text.trimEnd()
+        return t.endsWith(".") || t.endsWith("?") || t.endsWith("!")
+    }
 
     private fun overlapRatio(aStart: Double, aEnd: Double, bStart: Double, bEnd: Double): Double {
         val inter = (kotlin.math.min(aEnd, bEnd) - kotlin.math.max(aStart, bStart)).coerceAtLeast(0.0)
@@ -636,11 +814,11 @@ class OverlayService : Service() {
                         } else {
                             0xFF6A1B9A.toInt()
                         }
-                        val displayText = if (showKoreanKeys.contains(sentenceKey) && !sentence.translatedTextKo.isNullOrBlank()) {
-                            sentence.translatedTextKo
+                        val displayText = if (showKoreanKeys.contains(sentenceKey)) {
+                            translatedTextByKey[sentenceKey] ?: sentence.text
                         } else {
                             sentence.text
-                        }.orEmpty()
+                        }
                         val splitBtn = Button(this).apply {
                             isAllCaps = false
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
@@ -679,6 +857,7 @@ class OverlayService : Service() {
                                 }
                                 showKoreanKeys.remove(sentenceKey)
                                 translationLoadingKeys.remove(sentenceKey)
+                                translatedTextByKey.remove(sentenceKey)
                                 sentenceStore.deleteSentence(folder, sentence)
                                 refreshSentenceButtons()
                             }
@@ -729,7 +908,7 @@ class OverlayService : Service() {
         }
         expandedSentenceKey = sentenceKey
         showKoreanKeys.add(sentenceKey)
-        if (!sentence.translatedTextKo.isNullOrBlank()) {
+        translatedTextByKey[sentenceKey]?.takeIf { it.isNotBlank() }?.let {
             refreshSentenceButtons()
             return
         }
@@ -751,9 +930,9 @@ class OverlayService : Service() {
                 .onSuccess { translated ->
                     val cleaned = translated.trim()
                     if (cleaned.isNotBlank()) {
-                        sentenceStore.updateSentenceTranslation(folder, sentence, cleaned)
                         mainHandler.post {
-                            statusTextView?.text = "Translation saved."
+                            translatedTextByKey[sentenceKey] = cleaned
+                            statusTextView?.text = "Translation: $cleaned"
                             refreshSentenceButtons()
                         }
                     } else {
@@ -1010,6 +1189,7 @@ class OverlayService : Service() {
         expandedSentenceKey = null
         showKoreanKeys.clear()
         translationLoadingKeys.clear()
+        translatedTextByKey.clear()
         if (repeatSession != null) {
             repeatCancelled = true
             finalizeRepeat(cancelled = true)
@@ -1021,6 +1201,22 @@ class OverlayService : Service() {
     private fun setOutputText(text: String) {
         outputTextView?.text = text
         outputScrollView?.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
+    }
+
+    private fun updatePerfSummary(summary: String?) {
+        lastPerfSummary = summary
+        perfTextView?.text = if (summary.isNullOrBlank()) {
+            "Perf: -"
+        } else {
+            "Perf: $summary"
+        }
+    }
+
+    private fun buildPerfSummary(sttElapsedMs: Long, requestedSec: Int): String {
+        val sttSec = sttElapsedMs / 1000.0
+        val req = requestedSec.coerceAtLeast(1)
+        val ratio = sttSec / req.toDouble()
+        return "perf STT/request=${"%.2f".format(ratio)}x (${String.format("%.1f", sttSec)}s/${req}s)"
     }
 
     private fun buildCaptureStatus(): String {
@@ -1175,12 +1371,14 @@ class OverlayService : Service() {
         private const val STT_PAD_AFTER_SEC_ACCURATE = 4
         private const val STT_PAD_BEFORE_SEC_FAST = 2
         private const val STT_PAD_AFTER_SEC_FAST = 2
-        private const val FAST_CHUNK_SEC = 15
-        private const val FAST_CHUNK_OVERLAP_SEC = 1
+        private const val FAST_CHUNK_SEC = 30
+        private const val FAST_CHUNK_OVERLAP_SEC = 4
         private const val FAST_CHUNK_EDGE_PAD_SEC = 1
-        private const val FAST_CHUNK_MIN_REQUEST_SEC = 25
+        private const val FAST_CHUNK_INTERNAL_PAD_SEC = 2
+        private const val FAST_CHUNK_MIN_REQUEST_SEC = 30
         private const val MERGE_SEGMENT_TIME_EPS = 0.25
         private const val MERGE_SEGMENT_OVERLAP_RATIO = 0.6
-        private const val MERGE_WORD_TIME_EPS = 0.08
+        private const val MERGE_WORD_TIME_EPS = 0.18
+        private const val MERGE_WORD_OVERLAP_RATIO_LOOSE = 0.6
     }
 }

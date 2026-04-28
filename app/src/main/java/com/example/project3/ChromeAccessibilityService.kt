@@ -24,20 +24,17 @@ class ChromeAccessibilityService : AccessibilityService() {
             YoutubeUrlParser.normalizeUrl(text?.toString())
         }?.let { return it }
 
-        YoutubeUrlParser.normalizeUrl(event.contentDescription?.toString())?.let { return it }
-
-        event.source?.let { src ->
-            findUrlInNode(src)?.let { return it }
-        }
-
         val root = rootInActiveWindow ?: return null
         return findUrlInNode(root)
     }
 
     private fun findUrlInNode(node: AccessibilityNodeInfo?): String? {
         val current = node ?: return null
-        val candidate = current.text?.toString() ?: current.contentDescription?.toString()
-        if (!candidate.isNullOrBlank()) {
+        val candidates = listOfNotNull(
+            current.text?.toString(),
+            current.contentDescription?.toString()
+        )
+        for (candidate in candidates) {
             YoutubeUrlParser.normalizeUrl(candidate)?.let { return it }
         }
         for (i in 0 until current.childCount) {

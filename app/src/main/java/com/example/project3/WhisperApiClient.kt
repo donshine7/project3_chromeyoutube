@@ -11,36 +11,51 @@ import java.util.concurrent.TimeUnit
 
 class WhisperApiClient {
     private val client = OkHttpClient.Builder()
-        .callTimeout(180, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(360, TimeUnit.SECONDS)
+        .callTimeout(420, TimeUnit.SECONDS)
         .build()
 
     fun transcribeVerboseEnglish(apiKey: String, audioFile: File): WhisperVerboseResult {
         // Prefer transcription with word timestamps for stable sentence boundaries.
-        val transcriptionAttempt = postWhisper(
-            apiKey = apiKey,
-            audioFile = audioFile,
-            endpoint = "https://api.openai.com/v1/audio/transcriptions",
-            includeWordTimestamps = true
-        )
-        if (transcriptionAttempt.isSuccessful) {
-            return WhisperVerboseJsonParser.parse(JSONObject(transcriptionAttempt.payload))
+        val transcriptionAttempt = runCatching {
+            postWhisper(
+                apiKey = apiKey,
+                audioFile = audioFile,
+                endpoint = "https://api.openai.com/v1/audio/transcriptions",
+                includeWordTimestamps = true
+            )
+        }
+        if (transcriptionAttempt.getOrNull()?.isSuccessful == true) {
+            return WhisperVerboseJsonParser.parse(JSONObject(transcriptionAttempt.getOrThrow().payload))
         }
 
         // Fallback: translation endpoint can still succeed on some edge formats.
-        val translationAttempt = postWhisper(
-            apiKey = apiKey,
-            audioFile = audioFile,
-            endpoint = "https://api.openai.com/v1/audio/translations",
-            includeWordTimestamps = false
-        )
-        if (translationAttempt.isSuccessful) {
-            return WhisperVerboseJsonParser.parse(JSONObject(translationAttempt.payload))
+        val translationAttempt = runCatching {
+            postWhisper(
+                apiKey = apiKey,
+                audioFile = audioFile,
+                endpoint = "https://api.openai.com/v1/audio/translations",
+                includeWordTimestamps = false
+            )
+        }
+        if (translationAttempt.getOrNull()?.isSuccessful == true) {
+            return WhisperVerboseJsonParser.parse(JSONObject(translationAttempt.getOrThrow().payload))
         }
 
+        val transcriptionError = transcriptionAttempt.exceptionOrNull()?.let { "${it.javaClass.simpleName}: ${it.message}" }
+            ?: transcriptionAttempt.getOrNull()?.let {
+                "HTTP ${it.code}: ${extractErrorMessage(it.payload)}"
+            } ?: "unknown"
+        val translationError = translationAttempt.exceptionOrNull()?.let { "${it.javaClass.simpleName}: ${it.message}" }
+            ?: translationAttempt.getOrNull()?.let {
+                "HTTP ${it.code}: ${extractErrorMessage(it.payload)}"
+            } ?: "unknown"
         throw IllegalStateException(
             "Whisper API failed. " +
-                "transcriptions(${transcriptionAttempt.code}): ${extractErrorMessage(transcriptionAttempt.payload)}; " +
-                "translations(${translationAttempt.code}): ${extractErrorMessage(translationAttempt.payload)}"
+                "transcriptions($transcriptionError); " +
+                "translations($translationError)"
         )
     }
 

@@ -6,14 +6,23 @@ import kotlin.math.max
 import kotlin.math.min
 
 class SentenceAssembler {
-    fun build(result: WhisperVerboseResult, requestedStartSec: Double, requestedEndSec: Double): List<SentenceTimestamp> {
+    fun build(
+        result: WhisperVerboseResult,
+        requestedStartSec: Double,
+        requestedEndSec: Double,
+        chunkBoundaryHints: List<Double> = emptyList()
+    ): List<SentenceTimestamp> {
         val allWords = result.words.orEmpty().filter { it.end - it.start > MIN_VALID_WORD_SEC }
         val allSegments = result.segments.orEmpty()
         val splitStart = requestedStartSec - SPLIT_WINDOW_PAD_SEC
         val splitEnd = requestedEndSec + SPLIT_WINDOW_PAD_SEC
         val fromWords = allWords.filter { overlapsWindow(it.start, it.end, splitStart, splitEnd) }
         val segments = allSegments.filter { overlapsWindow(it.start, it.end, requestedStartSec - 1.0, requestedEndSec + 1.0) }
-        val sentences = if (fromWords.isNotEmpty()) splitWords(fromWords, segments) else splitSegments(segments)
+        val sentences = if (fromWords.isNotEmpty()) {
+            splitWords(fromWords, segments, chunkBoundaryHints)
+        } else {
+            splitSegments(segments)
+        }
         val clipped = sentences.mapNotNull { keepIfRelevant(it, requestedStartSec, requestedEndSec, allWords) }
         val normalized = if (fromWords.isNotEmpty() && allSegments.isNotEmpty()) {
             reinforceBoundaryPunctuation(clipped, allSegments)
@@ -33,34 +42,73 @@ class SentenceAssembler {
         }
     }
 
-    private fun splitWords(words: List<WhisperWord>, segments: List<WhisperSegment>): List<SentenceTimestamp> {
+    private fun splitWords(
+        words: List<WhisperWord>,
+        segments: List<WhisperSegment>,
+        chunkBoundaryHints: List<Double>
+    ): List<SentenceTimestamp> {
         if (words.isEmpty()) return emptyList()
         val out = mutableListOf<SentenceTimestamp>()
         val current = mutableListOf<WhisperWord>()
         val boundaries = buildSegmentBoundaries(segments)
+        val segmentStarts = segments.map { it.start }
         val splitReasons = mutableMapOf<String, Int>()
         val recentGaps = ArrayDeque<Double>()
 
-        for (word in words) {
+        for ((index, word) in words.withIndex()) {
             if (current.isNotEmpty()) {
                 val prev = current.last()
-                val decision = shouldSplit(current, prev, word, boundaries, gapStats(recentGaps))
-                if (decision.shouldSplit && decision.reason == "hard_length") {
-                    val bestCut = findBestInternalCutIndex(current, boundaries, gapStats(recentGaps))
+                val lookaheadWords = words.subList(index, min(index + 4, words.size))
+                val decision = shouldSplit(
+                    current = current,
+                    prev = prev,
+                    next = word,
+                    boundaries = boundaries,
+                    segmentStarts = segmentStarts,
+                    stats = gapStats(recentGaps),
+                    lookaheadWords = lookaheadWords,
+                    chunkBoundaryHints = chunkBoundaryHints
+                )
+                if (decision.shouldSplit && decision.reason.startsWith("hard_length")) {
+                    val allowLowQualityCut = decision.reason == "hard_length_emergency"
+                    val bestStarterCut = if (!allowLowQualityCut) {
+                        findStarterPreferredCutIndex(current, boundaries)
+                    } else {
+                        null
+                    }
+                    val bestCut = bestStarterCut ?: findBestInternalCutIndex(
+                        words = current,
+                        boundaries = boundaries,
+                        stats = gapStats(recentGaps),
+                        allowLowQuality = allowLowQualityCut
+                    )
                     if (bestCut != null) {
                         emitWords(current.take(bestCut + 1))?.let(out::add)
-                        splitReasons["hard_length_best_cut"] = (splitReasons["hard_length_best_cut"] ?: 0) + 1
+                        val key = when {
+                            bestStarterCut != null -> "hard_length_starter_preferred_cut"
+                            allowLowQualityCut -> "hard_length_emergency_best_cut"
+                            else -> "hard_length_soft_best_cut"
+                        }
+                        splitReasons[key] = (splitReasons[key] ?: 0) + 1
                         val tail = current.drop(bestCut + 1)
                         current.clear()
                         current.addAll(tail)
                     } else {
-                        emitWords(current)?.let(out::add)
-                        current.clear()
-                        splitReasons["hard_length"] = (splitReasons["hard_length"] ?: 0) + 1
+                        if (allowLowQualityCut) {
+                            emitWords(current)?.let(out::add)
+                            current.clear()
+                            splitReasons["hard_length_emergency_flush"] = (splitReasons["hard_length_emergency_flush"] ?: 0) + 1
+                        }
                     }
                 } else if (decision.shouldSplit) {
                     if (decision.reason == "score_split") {
-                        Log.d(TAG, "scoreSplit score=${"%.2f".format(decision.score)} evidence=${decision.evidence}")
+                        Log.d(
+                            TAG,
+                            "scoreSplit t=${"%.1f".format(word.start)} prev=${prev.word} next=${word.word} " +
+                                "gap=${"%.2f".format((word.start - prev.end).coerceAtLeast(0.0))} " +
+                                "span=${"%.1f".format(prev.end - current.first().start)} " +
+                                "score=${"%.2f".format(decision.score)} evidence=${decision.evidence}"
+                        )
                     }
                     splitReasons[decision.reason] = (splitReasons[decision.reason] ?: 0) + 1
                     emitWords(current)?.let(out::add)
@@ -76,7 +124,7 @@ class SentenceAssembler {
         if (splitReasons.isNotEmpty()) {
             Log.d(TAG, "splitWords reasons=${splitReasons.entries.joinToString(",") { "${it.key}:${it.value}" }}")
         }
-        return mergeSmallFragments(out)
+        return postProcessWordSentences(mergeSmallFragments(out))
     }
 
     private fun splitSegments(segments: List<WhisperSegment>): List<SentenceTimestamp> {
@@ -137,18 +185,29 @@ class SentenceAssembler {
         prev: WhisperWord,
         next: WhisperWord,
         boundaries: List<Double>,
-        stats: GapStats
+        segmentStarts: List<Double>,
+        stats: GapStats,
+        lookaheadWords: List<WhisperWord>,
+        chunkBoundaryHints: List<Double>
     ): SplitDecision {
         val gap = next.start - prev.end
         val span = current.last().end - current.first().start
+        if (shouldProtectBoundary(prev.word, next.word) && gap <= PROTECTED_BOUNDARY_GAP_SEC) {
+            return SplitDecision(false, "protected_boundary")
+        }
         val hardPunctuation = endsSentence(prev.word) && current.size >= 2
         if (hardPunctuation) return SplitDecision(true, "hard_punctuation")
-        val longSilence = gap >= 1.1
+        val continuationAfterGap = startsLowercaseContinuation(next.word) || startsSubordinateWord(next.word)
+        val hardSilenceThreshold = if (continuationAfterGap) HARD_SILENCE_CONTINUATION_SEC else HARD_SILENCE_SEC
+        val longSilence = gap >= hardSilenceThreshold
         if (longSilence) return SplitDecision(true, "hard_silence")
-        val tooLongSentence = current.size >= HARD_MAX_WORDS || span >= HARD_MAX_SPAN_SEC
-        if (tooLongSentence) return SplitDecision(true, "hard_length")
+        val emergencyTooLong = current.size >= HARD_MAX_WORDS_EMERGENCY || span >= HARD_MAX_SPAN_SEC_EMERGENCY
+        if (emergencyTooLong) return SplitDecision(true, "hard_length_emergency")
+        val softTooLong = current.size >= HARD_MAX_WORDS_SOFT || span >= HARD_MAX_SPAN_SEC_SOFT
 
         val nearSegmentBoundary = boundaries.any { it in (prev.end - 0.12)..(next.start + 0.12) }
+        val nearSegmentStart = segmentStarts.any { kotlin.math.abs(it - next.start) <= 0.25 }
+        val nearChunkBoundary = chunkBoundaryHints.any { kotlin.math.abs(it - next.start) <= 0.8 }
         val mediumGap = gap >= 0.4
         val highGap = gap >= 0.65
         val weakPunctuation = endsWeakBoundary(prev.word)
@@ -184,6 +243,16 @@ class SentenceAssembler {
         val startSignal = startsStrongSentenceWord(next.word) || startsConnectorWord(next.word)
         val subordinateStart = startsSubordinateWord(next.word)
         val discourseStarter = startsDiscourseStarterWord(next.word)
+        val dialogueStarter = startsDialogueStarterWord(next.word)
+        val lowercaseSentenceStarter = startsLowercaseSentenceStarterWord(next.word)
+        val phraseSentenceStarter = startsPhraseSentenceStarter(lookaheadWords)
+        val subjectSentenceStarter = startsSubjectSentenceStarter(lookaheadWords)
+        val prepositionSentenceStarter = startsPrepositionSentenceStarterWord(
+            nextWord = next.word,
+            gap = gap,
+            nearSegmentBoundary = nearSegmentBoundary,
+            span = span
+        )
         val hasAnchor = mediumGap || weakPunctuation || nearSegmentBoundary || gapZ >= 1.2
         if (startSignal && hasAnchor) {
             score += 0.8
@@ -194,6 +263,29 @@ class SentenceAssembler {
         if (discourseStarter && hasAnchor) {
             score += 0.9
             evidence += "discourse_starter_boost"
+        }
+        val starterAnchor = gap >= STARTER_ANCHOR_GAP_SEC || weakPunctuation || nearSegmentBoundary || gapZ >= STARTER_ANCHOR_Z
+        val looseStarterAnchor = starterAnchor || nearSegmentStart
+        val longEnoughForPhrase = span >= PHRASE_STARTER_MIN_SPAN_SEC
+        if (dialogueStarter && (starterAnchor || gap >= 0.25 || current.size >= 10 || span >= 7.0)) {
+            score += 1.3
+            evidence += "dialogue_starter_boost"
+        }
+        if (lowercaseSentenceStarter && looseStarterAnchor) {
+            score += 1.2
+            evidence += "lowercase_sentence_starter"
+        }
+        if (prepositionSentenceStarter) {
+            score += 0.9
+            evidence += "preposition_starter"
+        }
+        if (phraseSentenceStarter) {
+            score += 1.4
+            evidence += "phrase_sentence_starter"
+        }
+        if (subjectSentenceStarter && looseStarterAnchor) {
+            score += 1.1
+            evidence += "subject_sentence_starter"
         }
         if (subordinateStart) {
             // Damp splits for clause continuations like "by shortening ...".
@@ -209,15 +301,41 @@ class SentenceAssembler {
         val connectorBoostPath = connectorStart &&
             (mediumGap || gapZ >= 1.0 || nearSegmentBoundary) &&
             score >= CONNECTOR_SPLIT_THRESHOLD
-        val safeSoftSplit = (score >= SOFT_SPLIT_THRESHOLD || connectorBoostPath) &&
-            hasAnchor &&
-            (anchoredEnough || connectorBoostPath) &&
+        val dialogueStarterPath = dialogueStarter &&
+            (starterAnchor || gap >= 0.25 || current.size >= 10 || span >= 7.0) &&
+            score >= STARTER_DIRECT_MIN_SCORE
+        val lowercaseStarterPath = lowercaseSentenceStarter &&
+            looseStarterAnchor &&
+            score >= STARTER_DIRECT_MIN_SCORE
+        val prepositionStarterPath = prepositionSentenceStarter &&
+            (starterAnchor || span >= PREPOSITION_STARTER_MIN_SPAN_SEC)
+        val phraseStarterPath = phraseSentenceStarter && (starterAnchor || longEnoughForPhrase)
+        val subjectStarterPath = subjectSentenceStarter &&
+            looseStarterAnchor &&
+            score >= SUBJECT_STARTER_DIRECT_MIN_SCORE
+        val strongStarterPath =
+            phraseStarterPath || dialogueStarterPath || lowercaseStarterPath || prepositionStarterPath || subjectStarterPath
+        if (nearChunkBoundary && !strongStarterPath && !endsSentence(prev.word)) {
+            score -= 1.2
+            evidence += "near_chunk_boundary_dampen"
+        }
+        val safeSoftSplit = (score >= SOFT_SPLIT_THRESHOLD || connectorBoostPath || strongStarterPath) &&
+            (hasAnchor || strongStarterPath) &&
+            (anchoredEnough || connectorBoostPath || strongStarterPath) &&
             current.size >= 3 &&
             // Prevent clause-level over-split like "he | couldn't" without stronger anchor.
-            (weakPunctuation || highGap || (startSignal && (mediumGap || gapZ >= 1.2)) || connectorBoostPath)
+            (
+                weakPunctuation ||
+                    highGap ||
+                    (startSignal && (mediumGap || gapZ >= 1.2)) ||
+                    connectorBoostPath ||
+                    strongStarterPath
+                )
         val shouldSplit = safeSoftSplit
         return if (shouldSplit) {
             SplitDecision(true, "score_split", score, evidence.joinToString("+"))
+        } else if (softTooLong) {
+            SplitDecision(true, "hard_length_soft", score, evidence.joinToString("+"))
         } else {
             SplitDecision(false, "none", score, evidence.joinToString("+"))
         }
@@ -312,11 +430,12 @@ class SentenceAssembler {
         if (allWords.isEmpty()) return sentence.text
         val sentenceStart = sentence.startSec - WORD_MATCH_EPSILON_SEC
         val sentenceEnd = sentence.endSec + WORD_MATCH_EPSILON_SEC
-        val clipStart = clippedStart - WORD_MATCH_EPSILON_SEC
-        val clipEnd = clippedEnd + WORD_MATCH_EPSILON_SEC
+        val clipStart = clippedStart - STRICT_CLIP_EPSILON_SEC
+        val clipEnd = clippedEnd + STRICT_CLIP_EPSILON_SEC
         val selected = allWords.filter { word ->
+            val midpoint = (word.start + word.end) / 2.0
             overlapsWindow(word.start, word.end, sentenceStart, sentenceEnd) &&
-                overlapsWindow(word.start, word.end, clipStart, clipEnd)
+                midpoint in clipStart..clipEnd
         }
         val selectedOrNearest = if (selected.isNotEmpty()) {
             selected
@@ -397,9 +516,96 @@ class SentenceAssembler {
         return normalized in DISCOURSE_STARTERS
     }
 
+    private fun startsDialogueStarterWord(word: String): Boolean {
+        val normalized = word.trim()
+            .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
+            .trimEnd(',', ';', ':', ')', ']', '"', '\'')
+            .lowercase()
+        return normalized in DIALOGUE_STARTERS
+    }
+
+    private fun startsLowercaseSentenceStarterWord(word: String): Boolean {
+        val normalized = word.trim()
+            .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
+            .trimEnd(',', ';', ':', ')', ']', '"', '\'')
+            .lowercase()
+        return normalized in LOWERCASE_SENTENCE_STARTERS
+    }
+
+    private fun startsLowercaseSentenceStarterText(text: String): Boolean {
+        val normalized = text.trimStart()
+            .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
+            .split(" ")
+            .firstOrNull()
+            ?.trim(',', ';', ':', ')', ']', '"', '\'')
+            ?.lowercase()
+            ?: return false
+        return normalized in LOWERCASE_SENTENCE_STARTERS
+    }
+
+    private fun startsPrepositionSentenceStarterWord(
+        nextWord: String,
+        gap: Double,
+        nearSegmentBoundary: Boolean,
+        span: Double
+    ): Boolean {
+        val normalized = nextWord.trim()
+            .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
+            .trimEnd(',', ';', ':', ')', ']', '"', '\'')
+            .lowercase()
+        return normalized == "at" && (gap >= 0.25 || nearSegmentBoundary || span >= 5.0)
+    }
+
+    private fun startsPhraseSentenceStarter(lookaheadWords: List<WhisperWord>): Boolean {
+        if (lookaheadWords.isEmpty()) return false
+        val t0 = normalizeToken(lookaheadWords.getOrNull(0)?.word.orEmpty())
+        val t1 = normalizeToken(lookaheadWords.getOrNull(1)?.word.orEmpty())
+        val t2 = normalizeToken(lookaheadWords.getOrNull(2)?.word.orEmpty())
+        if (t0 == "according" && t1 == "to") return true
+        if (t0 == "right" && t1 == "i" && t2 == "mean") return true
+        if (t0 == "i" && t1 == "mean") return true
+        if (t0 == "this" && t1 == "abrupt") return true
+        if (t0 == "these" && t1 == "abrupt") return true
+        if (t0 == "the" && t1 == "international") return true
+        if (t0 == "so" && t1 == "if") return true
+        if (t0 == "when") return true
+        return false
+    }
+
+    private fun startsSubjectSentenceStarter(lookaheadWords: List<WhisperWord>): Boolean {
+        if (lookaheadWords.size < 2) return false
+        val t0 = normalizeToken(lookaheadWords[0].word)
+        val t1 = normalizeToken(lookaheadWords[1].word)
+        if (t0.isBlank() || t1.isBlank()) return false
+        if (t0 in CONTINUATION_STARTERS) return false
+        if (t0 in ARTICLE_WORDS) return false
+        return t1 in SUBJECT_SECOND_WORDS
+    }
+
+    private fun normalizeToken(word: String): String {
+        return word.trim()
+            .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
+            .trimEnd(',', ';', ':', ')', ']', '"', '\'')
+            .lowercase()
+    }
+
     private fun endsWeakBoundary(word: String): Boolean {
         val trimmed = word.trimEnd()
         return trimmed.endsWith(",") || trimmed.endsWith(";") || trimmed.endsWith(":")
+    }
+
+    private fun shouldProtectBoundary(prevWord: String, nextWord: String): Boolean {
+        val prev = normalizeToken(prevWord)
+        val next = normalizeToken(nextWord)
+        if (prev.isBlank() || next.isBlank()) return false
+        if (prev in INCOMPLETE_TAIL_WORDS) return true
+        if (prev == "south" && next == "korea") return true
+        if (prev == "google" && next == "deepmind") return true
+        if (prev == "alpha" && next == "go") return true
+        if (prev == "seung" && next == "hyun") return true
+        if (prev == "lee" && next == "sedol") return true
+        if (prev == "yoon" && next == "koo") return true
+        return false
     }
 
     private fun buildSegmentBoundaries(segments: List<WhisperSegment>): List<Double> {
@@ -476,14 +682,19 @@ class SentenceAssembler {
     private fun findBestInternalCutIndex(
         words: List<WhisperWord>,
         boundaries: List<Double>,
-        stats: GapStats
+        stats: GapStats,
+        allowLowQuality: Boolean
     ): Int? {
         if (words.size < 6) return null
         var bestIndex: Int? = null
         var bestScore = Double.NEGATIVE_INFINITY
         for (i in 1 until words.lastIndex) {
+            if (i < MIN_SIDE_WORDS || (words.size - (i + 1)) < MIN_SIDE_WORDS) continue
             val prev = words[i]
             val next = words[i + 1]
+            val leftSpan = (prev.end - words.first().start).coerceAtLeast(0.0)
+            val rightSpan = (words.last().end - next.start).coerceAtLeast(0.0)
+            if (leftSpan < MIN_SIDE_SPAN_SEC || rightSpan < MIN_SIDE_SPAN_SEC) continue
             val gap = (next.start - prev.end).coerceAtLeast(0.0)
             val nearSegmentBoundary = boundaries.any { it in (prev.end - 0.12)..(next.start + 0.12) }
             val gapZ = stats.zScore(gap)
@@ -495,6 +706,54 @@ class SentenceAssembler {
             if (gapZ >= 1.2) score += 0.7
             score += connectorStrength(next.word)
             if (startsSubordinateWord(next.word)) score -= 0.9
+            val nextToken = normalizeToken(next.word)
+            val hasStrongAnchor = gap >= 0.55 || nearSegmentBoundary || gapZ >= 1.4 || endsWeakBoundary(prev.word)
+            if (nextToken in NOUN_PHRASE_CONTINUATIONS && !(startsStrongSentenceWord(next.word) && hasStrongAnchor)) {
+                score -= 1.2
+            }
+            val hasSemanticCue = endsSentence(prev.word) ||
+                endsWeakBoundary(prev.word) ||
+                nearSegmentBoundary ||
+                startsPhraseSentenceStarter(words.subList(i + 1, min(i + 5, words.size))) ||
+                startsDialogueStarterWord(next.word) ||
+                startsLowercaseSentenceStarterWord(next.word) ||
+                startsPrepositionSentenceStarterWord(next.word, gap, nearSegmentBoundary, words.last().end - words.first().start)
+            if (!allowLowQuality && !hasSemanticCue) continue
+            if (score > bestScore) {
+                bestScore = score
+                bestIndex = i
+            }
+        }
+        if (!allowLowQuality && bestScore < INTERNAL_CUT_MIN_SCORE) return null
+        return bestIndex
+    }
+
+    private fun findStarterPreferredCutIndex(
+        words: List<WhisperWord>,
+        boundaries: List<Double>
+    ): Int? {
+        if (words.size < 6) return null
+        var bestIndex: Int? = null
+        var bestScore = Double.NEGATIVE_INFINITY
+        for (i in 1 until words.lastIndex) {
+            if (i < MIN_SIDE_WORDS || (words.size - (i + 1)) < MIN_SIDE_WORDS) continue
+            val prev = words[i]
+            val next = words[i + 1]
+            val gap = (next.start - prev.end).coerceAtLeast(0.0)
+            val span = words.last().end - words.first().start
+            val nearSegmentBoundary = boundaries.any { it in (prev.end - 0.12)..(next.start + 0.12) }
+            val phraseStarter = startsPhraseSentenceStarter(words.subList(i + 1, min(i + 5, words.size)))
+            val lowercaseStarter = startsLowercaseSentenceStarterWord(next.word)
+            val dialogueStarter = startsDialogueStarterWord(next.word)
+            val prepositionStarter = startsPrepositionSentenceStarterWord(next.word, gap, nearSegmentBoundary, span)
+            if (!phraseStarter && !lowercaseStarter && !dialogueStarter && !prepositionStarter) continue
+            var score = 0.0
+            if (phraseStarter) score += 2.4
+            if (dialogueStarter) score += 1.6
+            if (lowercaseStarter) score += 1.2
+            if (prepositionStarter) score += 1.1
+            score += (gap * 1.5).coerceAtMost(1.6)
+            if (nearSegmentBoundary) score += 0.5
             if (score > bestScore) {
                 bestScore = score
                 bestIndex = i
@@ -516,6 +775,121 @@ class SentenceAssembler {
         }
     }
 
+    private fun postProcessWordSentences(items: List<SentenceTimestamp>): List<SentenceTimestamp> {
+        if (items.size <= 1) return items
+        return mergeAdjacentWhile(items) { cur, next ->
+            val gap = (next.startSec - cur.endSec).coerceAtLeast(0.0)
+            val curDur = cur.endSec - cur.startSec
+            val combinedDur = next.endSec - cur.startSec
+            val shortTailJoin = curDur < 1.0 &&
+                wordCount(cur.text) <= 2 &&
+                gap <= 0.35 &&
+                !isStandaloneUtterance(cur.text) &&
+                !startsDiscourseStarterText(next.text)
+            val continuationJoin = !endsSentence(cur.text) &&
+                startsLowercaseContinuation(next.text) &&
+                !startsLowercaseSentenceStarterText(next.text) &&
+                !startsDiscourseStarterText(next.text) &&
+                gap <= 0.45 &&
+                combinedDur <= 10.0
+            val incompleteTailJoin = !endsSentence(cur.text) &&
+                gap <= 0.20 &&
+                combinedDur <= 18.0 &&
+                (endsWithIncompleteTail(cur.text) || protectsTextBoundary(cur.text, next.text))
+            shortTailJoin || continuationJoin || incompleteTailJoin
+        }
+    }
+
+    private fun mergeAdjacentWhile(
+        items: List<SentenceTimestamp>,
+        shouldJoin: (SentenceTimestamp, SentenceTimestamp) -> Boolean
+    ): List<SentenceTimestamp> {
+        var current = items
+        var changed: Boolean
+        do {
+            changed = false
+            val out = mutableListOf<SentenceTimestamp>()
+            var i = 0
+            while (i < current.size) {
+                val cur = current[i]
+                val next = current.getOrNull(i + 1)
+                if (next != null && shouldJoin(cur, next)) {
+                    out += cur.copy(
+                        endSec = next.endSec,
+                        text = normalizeText("${cur.text} ${next.text}")
+                    )
+                    changed = true
+                    i += 2
+                } else {
+                    out += cur
+                    i += 1
+                }
+            }
+            current = out
+        } while (changed)
+        return current
+    }
+
+    private fun startsLowercaseContinuation(text: String): Boolean {
+        val tokenRaw = text.trimStart()
+            .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
+            .split(" ")
+            .firstOrNull()
+            ?.trim(',', ';', ':', '.', '!', '?')
+            ?: return false
+        return tokenRaw.lowercase() in CONTINUATION_STARTERS
+    }
+
+    private fun endsWithIncompleteTail(text: String): Boolean {
+        val token = lastToken(text) ?: return false
+        return token in INCOMPLETE_TAIL_WORDS
+    }
+
+    private fun protectsTextBoundary(curText: String, nextText: String): Boolean {
+        val prev = lastToken(curText) ?: return false
+        val next = firstToken(nextText) ?: return false
+        if (prev == "south" && next == "korea") return true
+        if (prev == "google" && next == "deepmind") return true
+        if (prev == "alpha" && next == "go") return true
+        if (prev == "seung" && next == "hyun") return true
+        if (prev == "lee" && next == "sedol") return true
+        if (prev == "yoon" && next == "koo") return true
+        return false
+    }
+
+    private fun firstToken(text: String): String? =
+        text.trim()
+            .split(Regex("\\s+"))
+            .firstOrNull()
+            ?.let(::normalizeToken)
+            ?.takeIf { it.isNotBlank() }
+
+    private fun lastToken(text: String): String? =
+        text.trim()
+            .split(Regex("\\s+"))
+            .lastOrNull()
+            ?.let(::normalizeToken)
+            ?.takeIf { it.isNotBlank() }
+
+    private fun wordCount(text: String): Int = text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+
+    private fun isStandaloneUtterance(text: String): Boolean {
+        val normalized = text.trim().trimEnd('.', '!', '?').lowercase()
+        return normalized in setOf("ok", "yes", "no", "yeah", "mm", "one", "right")
+    }
+
+    private fun startsDiscourseStarterText(text: String): Boolean {
+        val normalized = text.trim()
+            .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
+            .trimEnd(',', ';', ':', ')', ']', '"', '\'')
+            .lowercase()
+        return normalized.startsWith("so ") ||
+            normalized.startsWith("but ") ||
+            normalized.startsWith("however ") ||
+            normalized.startsWith("and then ") ||
+            normalized.startsWith("now ")
+    }
+
     companion object {
         private const val TAG = "SentenceAssembler"
         private const val MIN_VALID_WORD_SEC = 0.01
@@ -525,9 +899,24 @@ class SentenceAssembler {
         private const val CLIP_EPSILON_SEC = 0.10
         private const val MIN_VALID_SENTENCE_SEC = 0.05
         private const val WORD_MATCH_EPSILON_SEC = 0.15
+        private const val STRICT_CLIP_EPSILON_SEC = 0.05
         private const val SHORT_CLIP_SEC = 0.8
-        private const val HARD_MAX_WORDS = 52
-        private const val HARD_MAX_SPAN_SEC = 13.0
+        private const val HARD_MAX_WORDS_SOFT = 52
+        private const val HARD_MAX_SPAN_SEC_SOFT = 16.0
+        private const val HARD_MAX_WORDS_EMERGENCY = 72
+        private const val HARD_MAX_SPAN_SEC_EMERGENCY = 22.0
+        private const val HARD_SILENCE_SEC = 1.05
+        private const val HARD_SILENCE_CONTINUATION_SEC = 1.25
+        private const val INTERNAL_CUT_MIN_SCORE = 1.9
+        private const val MIN_SIDE_WORDS = 3
+        private const val MIN_SIDE_SPAN_SEC = 0.8
+        private const val STARTER_ANCHOR_GAP_SEC = 0.30
+        private const val STARTER_ANCHOR_Z = 1.4
+        private const val STARTER_DIRECT_MIN_SCORE = 2.2
+        private const val SUBJECT_STARTER_DIRECT_MIN_SCORE = 2.4
+        private const val PHRASE_STARTER_MIN_SPAN_SEC = 5.0
+        private const val PREPOSITION_STARTER_MIN_SPAN_SEC = 6.0
+        private const val PROTECTED_BOUNDARY_GAP_SEC = 0.35
         private val CONNECTOR_WORDS = setOf(
             "and",
             "but",
@@ -550,6 +939,109 @@ class SentenceAssembler {
             "no",
             "that's",
             "thats"
+        )
+        private val DIALOGUE_STARTERS = setOf(
+            "yes",
+            "no",
+            "yeah",
+            "ok",
+            "okay",
+            "right"
+        )
+        private val LOWERCASE_SENTENCE_STARTERS = setOf(
+            "this",
+            "these",
+            "those",
+            "there",
+            "he",
+            "she",
+            "they",
+            "we",
+            "it",
+            "yes",
+            "no",
+            "yeah",
+            "ok",
+            "okay",
+            "absolutely",
+            "actually",
+            "now",
+            "then"
+        )
+        private val CONTINUATION_STARTERS = setOf(
+            "to",
+            "for",
+            "of",
+            "that",
+            "which",
+            "who",
+            "whom",
+            "whose",
+            "by",
+            "in",
+            "on",
+            "with",
+            "from",
+            "because",
+            "while",
+            "if",
+            "when",
+            "where",
+            "after",
+            "before",
+            "since",
+            "unless",
+            "although",
+            "though"
+        )
+        private val SUBJECT_SECOND_WORDS = setOf(
+            "recently",
+            "also",
+            "now",
+            "will",
+            "is",
+            "are",
+            "was",
+            "were",
+            "has",
+            "have",
+            "had"
+        )
+        private val ARTICLE_WORDS = setOf(
+            "the",
+            "a",
+            "an"
+        )
+        private val INCOMPLETE_TAIL_WORDS = setOf(
+            "to",
+            "for",
+            "of",
+            "by",
+            "in",
+            "on",
+            "with",
+            "from",
+            "during",
+            "between",
+            "and",
+            "or",
+            "the",
+            "a",
+            "an"
+        )
+        private val NOUN_PHRASE_CONTINUATIONS = setOf(
+            "the",
+            "a",
+            "an",
+            "this",
+            "these",
+            "that",
+            "those",
+            "his",
+            "her",
+            "their",
+            "its",
+            "our"
         )
         private val SUBORDINATE_WORDS = setOf(
             "by",

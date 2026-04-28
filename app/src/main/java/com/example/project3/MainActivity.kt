@@ -12,6 +12,7 @@ import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
     private lateinit var urlText: TextView
@@ -211,13 +212,22 @@ class MainActivity : AppCompatActivity() {
         val selectedUrl = YoutubeUrlParser.normalizeUrl(urlText.text?.toString())
             ?: ChromeCaptureStore.getObservedUrl(this)
         val apiKey = apiKeyInput.text?.toString().orEmpty().trim()
+        val mode = selectedSttMode()
+        val profile = selectedOnDeviceProfile()
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
             .putString(KEY_API_KEY, apiKey)
             .putString(KEY_SELECTED_URL, selectedUrl)
             .putString(KEY_LAST_URL, selectedUrl)
-            .putString(KEY_STT_MODE, selectedSttMode())
-            .putString(KEY_ON_DEVICE_PROFILE, selectedOnDeviceProfile())
+            .putString(KEY_STT_MODE, mode)
+            .putString(KEY_ON_DEVICE_PROFILE, profile)
             .apply()
+
+        if (mode == STT_MODE_ON_DEVICE) {
+            statusText.text = "Preparing on-device STT..."
+            thread(name = "main-start-warmup", isDaemon = true) {
+                OnDeviceWarmupCoordinator.ensureWarmupOnce(this, profile)
+            }
+        }
 
         val overlayIntent = Intent(this, OverlayService::class.java).apply {
             if (startSec != null && endSec != null) {
