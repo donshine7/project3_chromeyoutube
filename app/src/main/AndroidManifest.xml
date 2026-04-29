@@ -40,6 +40,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ClipboardCaptureActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:finishOnTaskLaunch="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Project3.TransparentClipboard" />
+
         <service
             android:name=".ChromeAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

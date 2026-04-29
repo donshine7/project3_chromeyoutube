@@ -40,6 +40,7 @@ class OverlayService : Service() {
     private var overlayParams: WindowManager.LayoutParams? = null
 
     private var statusTextView: TextView? = null
+    private var headerTitleTextView: TextView? = null
     private var perfTextView: TextView? = null
     private var outputTextView: TextView? = null
     private var outputScrollView: ScrollView? = null
@@ -73,6 +74,7 @@ class OverlayService : Service() {
     private var activeSentenceKey: String? = null
     private var expandedSentenceKey: String? = null
     private var lastPerfSummary: String? = null
+    private var currentVideoTitle: String? = null
     private val showKoreanKeys = mutableSetOf<String>()
     private val translationLoadingKeys = mutableSetOf<String>()
     private val translatedTextByKey = mutableMapOf<String, String>()
@@ -131,6 +133,14 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CLIPBOARD_CAPTURE_RESULT) {
+            val after = intent.getStringExtra(EXTRA_CLIPBOARD_CAPTURE_AFTER).orEmpty()
+            val url = intent.getStringExtra(EXTRA_CLIPBOARD_CAPTURE_URL)
+            val startSec = intent.getIntExtra(EXTRA_CLIPBOARD_CAPTURE_START_SEC, -1)
+            val endSec = intent.getIntExtra(EXTRA_CLIPBOARD_CAPTURE_END_SEC, -1)
+            mainHandler.post { handleClipboardCaptureResult(after, url, startSec, endSec) }
+            return START_STICKY
+        }
         val startSec = intent?.getIntExtra(EXTRA_AUTO_START_SEC, -1) ?: -1
         val endSec = intent?.getIntExtra(EXTRA_AUTO_END_SEC, -1) ?: -1
         if (startSec >= 0 && endSec > startSec) {
@@ -147,10 +157,12 @@ class OverlayService : Service() {
             setBackgroundColor(0xCC111111.toInt())
             setPadding(dp(10), dp(8), dp(10), dp(8))
         }
-        val title = TextView(this).apply {
-            text = "Project3 Overlay"
+        headerTitleTextView = TextView(this).apply {
+            text = "Project3 Overlay\n-"
             setTextColor(0xFFFFFFFF.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f * FONT_SCALE)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
         }
         statusTextView = TextView(this).apply {
             setTextColor(0xFFFFFFFF.toInt())
@@ -178,6 +190,13 @@ class OverlayService : Service() {
             text = "Close"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
             setOnClickListener { stopSelf() }
+        }
+        val resizeHandle = TextView(this).apply {
+            text = "↕ Resize"
+            gravity = Gravity.CENTER
+            setTextColor(0xFFCFD8DC.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f * FONT_SCALE)
+            setPadding(0, dp(4), 0, dp(4))
         }
         val controlsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         controlsRow.addView(toggleButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -217,13 +236,14 @@ class OverlayService : Service() {
             addView(folderButtonsContainer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
 
-        root.addView(title)
+        root.addView(headerTitleTextView)
         root.addView(statusTextView)
         root.addView(perfTextView)
         root.addView(controlsRow)
         root.addView(outputScrollView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)))
         root.addView(folderRow)
         root.addView(folderScrollView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(resizeHandle, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         root.addView(closeButton)
 
         val display = resources.displayMetrics
@@ -245,13 +265,16 @@ class OverlayService : Service() {
             y = (display.heightPixels - overlayHeight - edgeMargin - bottomSafeOffset).coerceAtLeast(0)
         }
         val dragTouchListener = createDragTouchListener(root)
+        val resizeTouchListener = createResizeTouchListener(root, display.heightPixels)
         root.setOnTouchListener(dragTouchListener)
-        title.setOnTouchListener(dragTouchListener)
+        headerTitleTextView?.setOnTouchListener(dragTouchListener)
         statusTextView?.setOnTouchListener(dragTouchListener)
+        resizeHandle.setOnTouchListener(resizeTouchListener)
         wm.addView(root, params)
         windowManager = wm
         overlayView = root
         overlayParams = params
+        refreshOverlayVideoHeaderTitle()
         refreshSentenceButtons()
         updateFolderFoldUi()
         maybeRunPendingAutoRange()
@@ -270,15 +293,57 @@ class OverlayService : Service() {
         runStt(startSec, endSec)
     }
 
+    private fun requestFocusedClipboardCapture(after: String, startSec: Int = -1, endSec: Int = -1) {
+        val intent = Intent(this, ClipboardCaptureActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            putExtra(EXTRA_CLIPBOARD_CAPTURE_AFTER, after)
+            putExtra(EXTRA_CLIPBOARD_CAPTURE_START_SEC, startSec)
+            putExtra(EXTRA_CLIPBOARD_CAPTURE_END_SEC, endSec)
+        }
+        runCatching { startActivity(intent) }.onFailure { err ->
+            statusTextView?.text = "Clipboard capture failed: ${summarizeError(err)}"
+            Log.w(tag, "clipboardCaptureActivityLaunchFailed reason=${summarizeError(err)}")
+        }
+    }
+
+    private fun handleClipboardCaptureResult(after: String, url: String?, startSec: Int, endSec: Int) {
+        if (url.isNullOrBlank()) {
+            statusTextView?.text = "No YouTube URL found in clipboard. Copy link first."
+            Log.w(tag, "focusedClipboardCapture failed after=$after reason=no_youtube_url")
+            return
+        }
+        Log.i(tag, "focusedClipboardCapture success after=$after videoId=${YoutubeUrlParser.extractVideoId(url)}")
+        statusTextView?.text = "Clipboard URL captured."
+        when (after) {
+            AFTER_CAPTURE_TOGGLE -> continueCaptureToggleAfterClipboard(url)
+            AFTER_CAPTURE_RUN_STT -> {
+                if (startSec >= 0 && endSec > startSec) {
+                    runStt(startSec, endSec)
+                } else {
+                    statusTextView?.text = "Invalid captured range."
+                }
+            }
+            else -> fetchAndShowClipboardTitle(url)
+        }
+    }
+
     private fun onCaptureToggle() {
         if (pipelineRunning) {
             Toast.makeText(this, "STT in progress.", Toast.LENGTH_SHORT).show()
             return
         }
         val playbackTarget = currentPlaybackTarget()
-        if (!PlaybackTarget.isChrome(playbackTarget)) {
-            captureClipboardYoutubeUrl(showStatus = true)
+        if (!PlaybackTarget.isChrome(playbackTarget) && !waitingEndCapture) {
+            statusTextView?.text = "Reading clipboard..."
+            requestFocusedClipboardCapture(AFTER_CAPTURE_TOGGLE)
+            return
         }
+        continueCaptureToggleAfterClipboard(null)
+    }
+
+    private fun continueCaptureToggleAfterClipboard(clipboardUrl: String?) {
+        clipboardUrl?.let { fetchAndShowClipboardTitle(it) }
+        val playbackTarget = currentPlaybackTarget()
         val snapshot = ChromePlaybackReader.readSnapshot(this, playbackTarget)
         if (snapshot == null || snapshot.positionMs < 0L) {
             statusTextView?.text = "Playback not detected. Open YouTube in ${PlaybackTarget.label(playbackTarget)}."
@@ -313,7 +378,11 @@ class OverlayService : Service() {
         waitingEndCapture = false
         toggleButton?.text = "Set Start"
         statusTextView?.text = buildCaptureStatus()
-        runStt(start, sec)
+        if (PlaybackTarget.isChrome(playbackTarget)) {
+            runStt(start, sec)
+        } else {
+            runStt(start, sec)
+        }
     }
 
     private fun runStt(startSec: Int, endSec: Int) {
@@ -346,12 +415,28 @@ class OverlayService : Service() {
         val chunkBoundaries = chunks.dropLast(1).map { it.validEndSec.toDouble() }
         val sttEngine = SttEngineFactory.create(this, sttMode, onDeviceProfile)
         val apiKey = prefs.getString(KEY_API_KEY, null)?.takeIf { it.isNotBlank() }
-        val sourceUrl = resolveCurrentSourceUrl()
+        val sourceUrl = resolveSourceUrlForDownload()
+        val sourceVideoId = YoutubeUrlParser.extractVideoId(sourceUrl)
+        if (!PlaybackTarget.isChrome(currentPlaybackTarget()) &&
+            !captureVideoId.isNullOrBlank() &&
+            !sourceVideoId.isNullOrBlank() &&
+            captureVideoId != sourceVideoId
+        ) {
+            pipelineRunning = false
+            updatePerfSummary(null)
+            statusTextView?.text = "Clipboard URL does not match captured video. Copy the current video link again."
+            Log.w(tag, "downloadBlocked clipboardVideoId=$sourceVideoId capturedVideoId=$captureVideoId")
+            return
+        }
         if ((sttMode == SttEngineFactory.MODE_API && apiKey.isNullOrBlank()) || sourceUrl.isNullOrBlank()) {
             pipelineRunning = false
             updatePerfSummary(null)
             statusTextView?.text = if (sourceUrl.isNullOrBlank()) {
-                "Missing URL."
+                if (PlaybackTarget.isChrome(currentPlaybackTarget())) {
+                    "Missing URL."
+                } else {
+                    "No YouTube URL found in clipboard. Copy link first."
+                }
             } else {
                 "Missing API key."
             }
@@ -481,7 +566,9 @@ class OverlayService : Service() {
                     videoTitle = localSource.title,
                     sentences = sentences,
                     replaceStartSec = startSec.toDouble(),
-                    replaceEndSec = endSec.toDouble()
+                    replaceEndSec = endSec.toDouble(),
+                    debugTranscript = merged,
+                    debugRawSentences = sentencesRaw
                 )
                 val tSave = System.currentTimeMillis()
                 val perfSummary = buildPerfSummary(sttElapsedMs, requestedDurationSec)
@@ -499,10 +586,12 @@ class OverlayService : Service() {
                         "total=${tSave - t0}ms"
                 )
                 mainHandler.post {
+                    currentVideoTitle = localSource.title?.takeIf { it.isNotBlank() } ?: currentVideoTitle
                     setOutputText(renderSentenceResult(sentences))
                     statusTextView?.text = "STT done: ${saveFile.name} | $perfSummary"
                     updatePerfSummary(perfSummary)
                     selectSavedContent(saveFile)
+                    refreshOverlayVideoHeaderTitle()
                     refreshSentenceButtons()
                 }
             }.onFailure { err ->
@@ -685,17 +774,20 @@ class OverlayService : Service() {
             }
             filtered += cur
         }
-        return filtered
+        return restoreMissingTerminalPunctuation(filtered)
     }
 
     private fun startsContinuationText(text: String): Boolean {
-        val token = text.trimStart()
+        val tokens = text.trimStart()
             .trimStart('"', '\'', '“', '”', '‘', '’', '(', '[')
-            .split(" ")
-            .firstOrNull()
-            ?.trim(',', ';', ':', '.', '!', '?')
-            ?.lowercase()
-            ?: return false
+            .split(Regex("\\s+"))
+            .map {
+                it.trim(',', ';', ':', '.', '!', '?', ')', ']', '"', '\'')
+                    .lowercase()
+            }
+            .filter { it.isNotBlank() }
+        val token = tokens.getOrNull(0) ?: return false
+        if (token == "to" && tokens.getOrNull(1) == "make" && tokens.getOrNull(2) == "matters") return false
         return token in setOf("to", "for", "of", "by", "in", "on", "with", "from", "that", "which", "because", "prove", "using")
     }
 
@@ -712,11 +804,15 @@ class OverlayService : Service() {
         val t2 = tokens.getOrNull(2).orEmpty()
         if (t0 in setOf("yes", "no", "yeah", "ok", "okay", "right")) return true
         if (t0 == "according" && t1 == "to") return true
+        if ((t0 == "that's" || t0 == "thats") && t1 == "right") return true
         if (t0 == "right" && t1 == "i" && t2 == "mean") return true
         if (t0 == "i" && t1 == "mean") return true
         if (t0 == "this" && t1 == "abrupt") return true
         if (t0 == "these" && t1 == "abrupt") return true
         if (t0 == "the" && t1 == "international") return true
+        if (t0 == "to" && t1 == "make" && t2 == "matters") return true
+        if (t0 == "previously") return true
+        if (t0 == "absolutely") return true
         if (t0 == "so" && t1 == "if") return true
         if (t0 == "so" && (t1 == "i'm" || t1 == "im" || t1 == "i")) return true
         if (t0 == "when") return true
@@ -728,6 +824,34 @@ class OverlayService : Service() {
             return true
         }
         return false
+    }
+
+    private fun restoreMissingTerminalPunctuation(items: List<SentenceTimestamp>): List<SentenceTimestamp> {
+        if (items.isEmpty()) return items
+        return items.mapIndexed { index, item ->
+            if (!shouldRestoreTerminalPunctuation(item, index, items)) {
+                item
+            } else {
+                Log.d(tag, "finalCleanup restore_period t=${"%.1f".format(item.endSec)} text=${item.text.take(60)}")
+                item.copy(text = "${item.text.trimEnd()}.")
+            }
+        }
+    }
+
+    private fun shouldRestoreTerminalPunctuation(
+        item: SentenceTimestamp,
+        index: Int,
+        items: List<SentenceTimestamp>
+    ): Boolean {
+        if (endsSentenceText(item.text)) return false
+        if (index >= items.lastIndex) return false
+        val words = item.text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (words.size < 4) return false
+        if (endsWithIncompleteTailText(item.text)) return false
+        val last = lastTokenText(item.text) ?: return false
+        if (last.endsWith("'s") || last.endsWith("’s")) return false
+        if (last in DANGLING_FINAL_WORDS) return false
+        return true
     }
 
     private fun endsWithIncompleteTailText(text: String): Boolean {
@@ -808,6 +932,7 @@ class OverlayService : Service() {
         }
         if (selectedDate != null && folders.none { it.date == selectedDate }) selectedDate = null
         if (selectedContent != null && folders.none { it.path == selectedContent?.path }) selectedContent = null
+        refreshOverlayVideoHeaderTitle()
         when {
             selectedDate == null -> {
                 folders.map { it.date }.distinct().sortedDescending().forEach { date ->
@@ -1169,7 +1294,11 @@ class OverlayService : Service() {
 
     private fun resolveCurrentSourceUrl(): String? {
         val playbackTarget = currentPlaybackTarget()
-        val clipboardUrl = if (PlaybackTarget.isChrome(playbackTarget)) null else captureClipboardYoutubeUrl(showStatus = false)
+        val clipboardUrl = if (PlaybackTarget.isChrome(playbackTarget)) {
+            null
+        } else {
+            prefs.getString(KEY_CLIPBOARD_CAPTURED_URL, null)
+        }
         val observed = ChromeCaptureStore.getObservedUrl(this)
         val selected = prefs.getString(KEY_SELECTED_URL, null)
         val fallback = prefs.getString(KEY_LAST_URL, null)
@@ -1178,6 +1307,36 @@ class OverlayService : Service() {
         } else {
             clipboardUrl ?: selected ?: fallback ?: observed
         }
+    }
+
+    private fun resolveSourceUrlForDownload(): String? {
+        val playbackTarget = currentPlaybackTarget()
+        if (PlaybackTarget.isChrome(playbackTarget)) {
+            val observed = ChromeCaptureStore.getObservedUrl(this)
+            val selected = prefs.getString(KEY_SELECTED_URL, null)
+            val fallback = prefs.getString(KEY_LAST_URL, null)
+            val resolved = observed ?: selected ?: fallback
+            Log.i(tag, "downloadSourceResolved target=chrome hasUrl=${!resolved.isNullOrBlank()}")
+            return resolved
+        }
+
+        val capturedAtMs = prefs.getLong(KEY_CLIPBOARD_CAPTURED_AT_MS, 0L)
+        val ageMs = System.currentTimeMillis() - capturedAtMs
+        val clipboardUrl = prefs.getString(KEY_CLIPBOARD_CAPTURED_URL, null)
+        if (clipboardUrl.isNullOrBlank()) {
+            Log.w(tag, "downloadSourceBlocked target=youtube_app reason=focused_clipboard_url_missing")
+            return null
+        }
+        if (capturedAtMs <= 0L || ageMs > CLIPBOARD_CAPTURE_FRESH_MS) {
+            Log.w(tag, "downloadSourceBlocked target=youtube_app reason=focused_clipboard_url_stale ageMs=$ageMs")
+            return null
+        }
+        Log.i(
+            tag,
+            "downloadSourceResolved target=youtube_app videoId=${YoutubeUrlParser.extractVideoId(clipboardUrl)} " +
+                "source=focused_clipboard ageMs=$ageMs"
+        )
+        return clipboardUrl
     }
 
     private fun resolveCurrentVideoId(): String? {
@@ -1196,16 +1355,52 @@ class OverlayService : Service() {
         PlaybackTarget.current(this)
 
     private fun captureClipboardYoutubeUrl(showStatus: Boolean): String? {
-        val normalized = YoutubeClipboardReader.readYoutubeUrl(this) ?: return null
+        val normalized = YoutubeClipboardReader.readYoutubeUrl(this)
+        if (normalized.isNullOrBlank()) {
+            Log.w(tag, "clipboardCapture failed reason=no_youtube_url")
+            return null
+        }
         prefs.edit()
             .putString(KEY_SELECTED_URL, normalized)
             .putString(KEY_LAST_URL, normalized)
             .apply()
         ChromeCaptureStore.saveObservedUrl(this, normalized)
+        Log.i(tag, "clipboardCapture success videoId=${YoutubeUrlParser.extractVideoId(normalized)}")
         if (showStatus) {
             statusTextView?.text = "Clipboard YouTube URL captured: $normalized"
         }
         return normalized
+    }
+
+    private fun fetchAndShowClipboardTitle(sourceUrl: String) {
+        val videoId = YoutubeUrlParser.extractVideoId(sourceUrl)
+        statusTextView?.text = "Clipboard URL captured. Loading title..."
+        thread(name = "overlay-title", isDaemon = true) {
+            runCatching {
+                extractor.fetchMetadata(sourceUrl)
+            }.onSuccess { metadata ->
+                mainHandler.post {
+                    val currentSelected = prefs.getString(KEY_SELECTED_URL, null)
+                    if (currentSelected != sourceUrl || pipelineRunning) return@post
+                    val title = metadata.title?.takeIf { it.isNotBlank() } ?: return@post
+                    currentVideoTitle = title
+                    refreshOverlayVideoHeaderTitle()
+                    statusTextView?.text = if (waitingEndCapture && capturedStartSec != null) {
+                        "Start: ${capturedStartSec}s | $title"
+                    } else {
+                        "Title: $title"
+                    }
+                }
+                Log.i(tag, "metadataResolved videoId=${metadata.id ?: videoId} titlePresent=${!metadata.title.isNullOrBlank()}")
+            }.onFailure { err ->
+                Log.w(tag, "metadataLookupFailed videoId=$videoId reason=${summarizeError(err)}")
+                mainHandler.post {
+                    if (!pipelineRunning) {
+                        statusTextView?.text = "Clipboard URL captured. Title lookup failed."
+                    }
+                }
+            }
+        }
     }
 
     private fun selectSavedContent(savedFile: java.io.File) {
@@ -1213,6 +1408,7 @@ class OverlayService : Service() {
         val dateDir = contentDir.parentFile ?: return
         selectedDate = dateDir.name
         selectedContent = SentenceTimestampStore.FolderEntry(dateDir.name, contentDir.name, contentDir)
+        currentVideoTitle = selectedContent?.let { sentenceStore.loadVideoTitle(it) } ?: currentVideoTitle
     }
 
     private fun navigateUp() {
@@ -1281,12 +1477,23 @@ class OverlayService : Service() {
         showKoreanKeys.clear()
         translationLoadingKeys.clear()
         translatedTextByKey.clear()
+        currentVideoTitle = null
         if (repeatSession != null) {
             repeatCancelled = true
             finalizeRepeat(cancelled = true)
         }
         resetCaptureState()
         refreshSentenceButtons()
+    }
+
+    private fun refreshOverlayVideoHeaderTitle() {
+        val header = headerTitleTextView ?: return
+        val selectedTitle = selectedContent?.let { sentenceStore.loadVideoTitle(it) }
+        val title = selectedTitle
+            ?.takeIf { it.isNotBlank() }
+            ?: currentVideoTitle?.takeIf { it.isNotBlank() }
+            ?: "-"
+        header.text = "Project3 Overlay\n$title"
     }
 
     private fun setOutputText(text: String) {
@@ -1417,6 +1624,33 @@ class OverlayService : Service() {
         }
     }
 
+    private fun createResizeTouchListener(target: View, screenHeightPx: Int): View.OnTouchListener {
+        var startHeight = 0
+        var touchY = 0f
+        val minHeight = (screenHeightPx * OVERLAY_MIN_HEIGHT_RATIO).toInt().coerceAtLeast(dp(220))
+        val maxHeight = (screenHeightPx * OVERLAY_MAX_HEIGHT_RATIO).toInt().coerceAtLeast(minHeight + dp(120))
+        return View.OnTouchListener { _, event ->
+            val wm = windowManager ?: return@OnTouchListener false
+            val lp = overlayParams ?: return@OnTouchListener false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startHeight = lp.height
+                    touchY = event.rawY
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaY = (event.rawY - touchY).toInt()
+                    lp.height = (startHeight + deltaY).coerceIn(minHeight, maxHeight)
+                    wm.updateViewLayout(target, lp)
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
     private fun fmtSec(sec: Double): String {
         val totalTenths = (sec.coerceAtLeast(0.0) * 10.0).roundToInt()
         val totalSec = totalTenths / 10
@@ -1479,8 +1713,15 @@ class OverlayService : Service() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        const val ACTION_CLIPBOARD_CAPTURE_RESULT = "com.example.project3.CLIPBOARD_CAPTURE_RESULT"
         const val EXTRA_AUTO_START_SEC = "extra_auto_start_sec"
         const val EXTRA_AUTO_END_SEC = "extra_auto_end_sec"
+        const val EXTRA_CLIPBOARD_CAPTURE_AFTER = "extra_clipboard_capture_after"
+        const val EXTRA_CLIPBOARD_CAPTURE_URL = "extra_clipboard_capture_url"
+        const val EXTRA_CLIPBOARD_CAPTURE_START_SEC = "extra_clipboard_capture_start_sec"
+        const val EXTRA_CLIPBOARD_CAPTURE_END_SEC = "extra_clipboard_capture_end_sec"
+        const val AFTER_CAPTURE_TOGGLE = "toggle"
+        const val AFTER_CAPTURE_RUN_STT = "run_stt"
         private const val FONT_SCALE = 0.8f
         private const val BUTTON_TEXT_SP = 11f
         private const val CHANNEL_ID = "project3_overlay_channel"
@@ -1489,8 +1730,11 @@ class OverlayService : Service() {
         private const val KEY_API_KEY = "openai_api_key"
         private const val KEY_SELECTED_URL = "selected_url"
         private const val KEY_LAST_URL = "last_url"
+        private const val KEY_CLIPBOARD_CAPTURED_URL = "clipboard_captured_url"
+        private const val KEY_CLIPBOARD_CAPTURED_AT_MS = "clipboard_captured_at_ms"
         private const val KEY_STT_MODE = "stt_mode"
         private const val KEY_ON_DEVICE_PROFILE = "on_device_profile"
+        private const val CLIPBOARD_CAPTURE_FRESH_MS = 2 * 60 * 1000L
         private const val STT_PAD_BEFORE_SEC_ACCURATE = 6
         private const val STT_PAD_AFTER_SEC_ACCURATE = 4
         private const val STT_PAD_BEFORE_SEC_FAST = 2
@@ -1504,7 +1748,41 @@ class OverlayService : Service() {
         private const val MERGE_SEGMENT_OVERLAP_RATIO = 0.6
         private const val MERGE_WORD_TIME_EPS = 0.18
         private const val MERGE_WORD_OVERLAP_RATIO_LOOSE = 0.6
+        private const val OVERLAY_MIN_HEIGHT_RATIO = 0.28
+        private const val OVERLAY_MAX_HEIGHT_RATIO = 0.88
         private const val FINAL_HARD_CUT_REPAIR_GAP_SEC = 0.28
         private const val FINAL_HARD_CUT_REPAIR_MAX_SPAN_SEC = 30.0
+        private val DANGLING_FINAL_WORDS = setOf(
+            "to",
+            "for",
+            "of",
+            "by",
+            "in",
+            "on",
+            "with",
+            "from",
+            "during",
+            "between",
+            "and",
+            "or",
+            "the",
+            "a",
+            "an",
+            "if",
+            "when",
+            "because",
+            "that",
+            "which",
+            "who",
+            "whose",
+            "whom",
+            "where",
+            "after",
+            "before",
+            "since",
+            "unless",
+            "although",
+            "though"
+        )
     }
 }

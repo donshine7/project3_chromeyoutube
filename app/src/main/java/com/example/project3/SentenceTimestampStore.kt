@@ -18,15 +18,18 @@ class SentenceTimestampStore(context: Context) {
         videoTitle: String? = null,
         sentences: List<SentenceTimestamp>,
         replaceStartSec: Double? = null,
-        replaceEndSec: Double? = null
+        replaceEndSec: Double? = null,
+        debugTranscript: WhisperVerboseResult? = null,
+        debugRawSentences: List<SentenceTimestamp>? = null
     ): File {
         val now = Date()
+        val timestamp = SimpleDateFormat("HHmmss", Locale.US).format(now)
         val dateFolder = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)
         val canonicalUrl = YoutubeUrlParser.canonicalWatchUrlFromAny(youtubeUrl) ?: youtubeUrl
         val videoId = YoutubeUrlParser.extractVideoId(canonicalUrl) ?: "unknown_video"
         val dateDir = File(root, dateFolder).apply { mkdirs() }
         val contentDir = resolveContentDir(dateDir, canonicalUrl, videoId, now)
-        val file = File(contentDir, "sentences-${SimpleDateFormat("HHmmss", Locale.US).format(now)}.json")
+        val file = File(contentDir, "sentences-$timestamp.json")
         val existing = loadLatestSentences(contentDir)
         val keptExisting = if (replaceStartSec != null && replaceEndSec != null && replaceEndSec > replaceStartSec) {
             existing.filterNot { it.endSec > replaceStartSec - 0.5 && it.startSec < replaceEndSec + 0.5 }
@@ -55,6 +58,22 @@ class SentenceTimestampStore(context: Context) {
             })
         }
         file.writeText(payload.toString(2))
+        if (debugTranscript != null) {
+            val debugFile = File(contentDir, "debug-$timestamp.json")
+            debugFile.writeText(
+                buildDebugPayload(
+                    canonicalUrl = canonicalUrl,
+                    videoId = videoId,
+                    videoTitle = videoTitle,
+                    savedAt = now.time,
+                    requestedStartSec = replaceStartSec,
+                    requestedEndSec = replaceEndSec,
+                    transcript = debugTranscript,
+                    rawSentences = debugRawSentences.orEmpty(),
+                    finalSentences = sentences
+                ).toString(2)
+            )
+        }
         return file
     }
 
@@ -127,7 +146,79 @@ class SentenceTimestampStore(context: Context) {
     }
 
     private fun latestJson(contentDir: File): File? =
-        contentDir.listFiles()?.filter { it.isFile && it.extension.equals("json", true) }?.maxByOrNull { it.lastModified() }
+        contentDir.listFiles()
+            ?.filter { it.isFile && it.extension.equals("json", true) && it.name.startsWith("sentences-") }
+            ?.maxByOrNull { it.lastModified() }
+
+    private fun buildDebugPayload(
+        canonicalUrl: String,
+        videoId: String,
+        videoTitle: String?,
+        savedAt: Long,
+        requestedStartSec: Double?,
+        requestedEndSec: Double?,
+        transcript: WhisperVerboseResult,
+        rawSentences: List<SentenceTimestamp>,
+        finalSentences: List<SentenceTimestamp>
+    ): JSONObject {
+        return JSONObject().apply {
+            put("youtubeUrl", canonicalUrl)
+            put("savedAt", savedAt)
+            put("videoId", videoId)
+            if (!videoTitle.isNullOrBlank()) {
+                put("videoTitle", videoTitle.trim())
+            }
+            if (requestedStartSec != null) put("requestedStartSec", requestedStartSec)
+            if (requestedEndSec != null) put("requestedEndSec", requestedEndSec)
+            put("transcriptText", transcript.text)
+            put("language", transcript.language ?: JSONObject.NULL)
+            put("duration", transcript.duration ?: JSONObject.NULL)
+            put("segments", JSONArray().apply {
+                transcript.segments.orEmpty().forEach { segment ->
+                    put(JSONObject().apply {
+                        put("id", segment.id)
+                        put("start", segment.start)
+                        put("end", segment.end)
+                        put("text", segment.text)
+                        put("words", JSONArray().apply {
+                            segment.words.orEmpty().forEach { word ->
+                                put(wordJson(word))
+                            }
+                        })
+                    })
+                }
+            })
+            put("words", JSONArray().apply {
+                transcript.words.orEmpty().forEach { word ->
+                    put(wordJson(word))
+                }
+            })
+            put("sentencesRaw", JSONArray().apply {
+                rawSentences.forEach { sentence ->
+                    put(sentenceJson(sentence))
+                }
+            })
+            put("sentencesFinal", JSONArray().apply {
+                finalSentences.forEach { sentence ->
+                    put(sentenceJson(sentence))
+                }
+            })
+        }
+    }
+
+    private fun wordJson(word: WhisperWord): JSONObject =
+        JSONObject().apply {
+            put("word", word.word)
+            put("start", word.start)
+            put("end", word.end)
+        }
+
+    private fun sentenceJson(sentence: SentenceTimestamp): JSONObject =
+        JSONObject().apply {
+            put("startSec", sentence.startSec)
+            put("endSec", sentence.endSec)
+            put("text", sentence.text)
+        }
 
     private fun loadLatestSentences(contentDir: File): List<SentenceTimestamp> {
         val latest = latestJson(contentDir) ?: return emptyList()

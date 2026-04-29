@@ -20,6 +20,17 @@ def _extract_video_info(source_url: str) -> dict:
         return ydl.extract_info(source_url, download=False)
 
 
+def get_video_metadata(source_url: str) -> str:
+    info = _extract_video_info(source_url)
+    return json.dumps(
+        {
+            "id": info.get("id"),
+            "liveStatus": info.get("live_status"),
+            "title": info.get("title"),
+        }
+    )
+
+
 def download_audio_file(source_url: str, output_dir: str, force_download: bool = False) -> str:
     os.makedirs(output_dir, exist_ok=True)
     info = _extract_video_info(source_url)

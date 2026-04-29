@@ -209,8 +209,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startDownloadFlow() {
-        val sourceUrl = YoutubeUrlParser.normalizeUrl(urlText.text?.toString()) ?: run {
-            updateStatus(getString(R.string.status_stage_failed, "YouTube URL is missing"))
+        val playbackTarget = selectedPlaybackTarget()
+        val sourceUrl = if (PlaybackTarget.isChrome(playbackTarget)) {
+            YoutubeUrlParser.normalizeUrl(urlText.text?.toString())
+        } else {
+            resolveYoutubeAppUrlForStart()
+        } ?: run {
+            updateStatus(
+                getString(
+                    R.string.status_stage_failed,
+                    if (PlaybackTarget.isChrome(playbackTarget)) {
+                        "YouTube URL is missing"
+                    } else {
+                        "No YouTube URL found in clipboard. Copy link first."
+                    }
+                )
+            )
             return
         }
         val startSec = parseTimeToSeconds(startInput.text?.toString()) ?: run {
@@ -235,7 +249,7 @@ class MainActivity : AppCompatActivity() {
             .putString(KEY_API_KEY, apiKey)
             .putString(KEY_SELECTED_URL, sourceUrl)
             .putString(KEY_LAST_URL, sourceUrl)
-            .putString(PlaybackTarget.KEY_PLAYBACK_TARGET, selectedPlaybackTarget())
+            .putString(PlaybackTarget.KEY_PLAYBACK_TARGET, playbackTarget)
             .putString(KEY_STT_MODE, mode)
             .putString(KEY_ON_DEVICE_PROFILE, selectedOnDeviceProfile())
             .apply()
@@ -278,9 +292,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val selectedUrl = YoutubeUrlParser.normalizeUrl(urlText.text?.toString())
-            ?: maybeCaptureYoutubeUrlFromClipboard(showStatus = true)
-            ?: if (PlaybackTarget.isChrome(playbackTarget)) ChromeCaptureStore.getObservedUrl(this) else null
+        val selectedUrl = if (PlaybackTarget.isChrome(playbackTarget)) {
+            YoutubeUrlParser.normalizeUrl(urlText.text?.toString())
+                ?: ChromeCaptureStore.getObservedUrl(this)
+        } else {
+            resolveYoutubeAppUrlForStart()
+        }
         if (!PlaybackTarget.isChrome(playbackTarget) && selectedUrl.isNullOrBlank()) {
             statusText.text = getString(R.string.status_waiting_youtube_url)
             return
@@ -316,6 +333,20 @@ class MainActivity : AppCompatActivity() {
         } else {
             getString(R.string.status_overlay_started)
         }
+    }
+
+    private fun resolveYoutubeAppUrlForStart(): String? {
+        val normalized = YoutubeClipboardReader.readYoutubeUrl(this)
+        if (normalized.isNullOrBlank()) {
+            statusText.text = "No YouTube URL found in clipboard. Copy link first."
+            return null
+        }
+        saveSelectedUrl(normalized)
+        ChromeCaptureStore.saveObservedUrl(this, normalized)
+        urlText.text = normalized
+        statusText.text = "YouTube app URL captured from clipboard."
+        clipboardStatusUntilMs = System.currentTimeMillis() + 8_000L
+        return normalized
     }
 
     private fun selectedSttMode(): String {
