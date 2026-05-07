@@ -12,6 +12,12 @@ class SentenceTimestampStore(context: Context) {
     private val root = File(context.filesDir, "stt_results").apply { mkdirs() }
 
     data class FolderEntry(val date: String, val contentId: String, val path: File)
+    data class TaggedSentence(
+        val folder: FolderEntry,
+        val sentence: SentenceTimestamp,
+        val videoTitle: String?,
+        val youtubeUrl: String?
+    )
 
     fun save(
         youtubeUrl: String,
@@ -49,11 +55,7 @@ class SentenceTimestampStore(context: Context) {
             put("timestampsAbsolute", true)
             put("sentences", JSONArray().apply {
                 merged.forEach { s ->
-                    put(JSONObject().apply {
-                        put("startSec", s.startSec)
-                        put("endSec", s.endSec)
-                        put("text", s.text)
-                    })
+                    put(sentenceJson(s))
                 }
             })
         }
@@ -94,11 +96,7 @@ class SentenceTimestampStore(context: Context) {
                 for (i in 0 until arr.length()) {
                     val item = arr.optJSONObject(i) ?: continue
                     add(
-                        SentenceTimestamp(
-                            startSec = item.optDouble("startSec", 0.0),
-                            endSec = item.optDouble("endSec", 0.0),
-                            text = item.optString("text", "")
-                        )
+                        sentenceFromJson(item)
                     )
                 }
             }.sortedBy { it.startSec }
@@ -127,15 +125,59 @@ class SentenceTimestampStore(context: Context) {
         rootJson.put("timestampsAbsolute", true)
         rootJson.put("sentences", JSONArray().apply {
             keep.forEach { s ->
-                put(JSONObject().apply {
-                    put("startSec", s.startSec)
-                    put("endSec", s.endSec)
-                    put("text", s.text)
-                })
+                put(sentenceJson(s))
             }
         })
         latest.writeText(rootJson.toString(2))
         return true
+    }
+
+    fun toggleSentenceTag(folder: FolderEntry, target: SentenceTimestamp): Boolean? {
+        val latest = latestJson(folder.path) ?: return null
+        val rootJson = runCatching { JSONObject(latest.readText()) }.getOrNull() ?: return null
+        val arr = rootJson.optJSONArray("sentences") ?: return null
+        var toggled: Boolean? = null
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val sentence = sentenceFromJson(item)
+            if (sentence.startSec == target.startSec && sentence.endSec == target.endSec && sentence.text == target.text) {
+                val nextTagged = !sentence.isTagged
+                item.put("tagged", nextTagged)
+                if (nextTagged) {
+                    item.put("taggedAtMs", System.currentTimeMillis())
+                } else {
+                    item.remove("taggedAtMs")
+                }
+                toggled = nextTagged
+                break
+            }
+        }
+        if (toggled == null) return null
+        latest.writeText(rootJson.toString(2))
+        return toggled
+    }
+
+    fun listTaggedSentences(): List<TaggedSentence> {
+        return listDateContentFolders()
+            .flatMap { folder ->
+                val title = loadVideoTitle(folder)
+                val url = loadYoutubeUrl(folder)
+                loadSentences(folder)
+                    .filter { it.isTagged }
+                    .map { sentence ->
+                        TaggedSentence(
+                            folder = folder,
+                            sentence = sentence,
+                            videoTitle = title,
+                            youtubeUrl = url
+                        )
+                    }
+            }
+            .sortedWith(
+                compareByDescending<TaggedSentence> { it.sentence.taggedAtMs }
+                    .thenByDescending { it.folder.date }
+                    .thenBy { it.sentence.startSec }
+            )
     }
 
     fun deleteContentFolder(folder: FolderEntry): Boolean = folder.path.deleteRecursively()
@@ -218,7 +260,20 @@ class SentenceTimestampStore(context: Context) {
             put("startSec", sentence.startSec)
             put("endSec", sentence.endSec)
             put("text", sentence.text)
+            if (sentence.isTagged) {
+                put("tagged", true)
+                put("taggedAtMs", sentence.taggedAtMs.takeIf { it > 0L } ?: System.currentTimeMillis())
+            }
         }
+
+    private fun sentenceFromJson(item: JSONObject): SentenceTimestamp =
+        SentenceTimestamp(
+            startSec = item.optDouble("startSec", 0.0),
+            endSec = item.optDouble("endSec", 0.0),
+            text = item.optString("text", ""),
+            isTagged = item.optBoolean("tagged", false),
+            taggedAtMs = item.optLong("taggedAtMs", 0L)
+        )
 
     private fun loadLatestSentences(contentDir: File): List<SentenceTimestamp> {
         val latest = latestJson(contentDir) ?: return emptyList()
@@ -227,13 +282,7 @@ class SentenceTimestampStore(context: Context) {
             buildList {
                 for (i in 0 until arr.length()) {
                     val item = arr.optJSONObject(i) ?: continue
-                    add(
-                        SentenceTimestamp(
-                            startSec = item.optDouble("startSec", 0.0),
-                            endSec = item.optDouble("endSec", 0.0),
-                            text = item.optString("text", "")
-                        )
-                    )
+                    add(sentenceFromJson(item))
                 }
             }
         }.getOrElse { emptyList() }

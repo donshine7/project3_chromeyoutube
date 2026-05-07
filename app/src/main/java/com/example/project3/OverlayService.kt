@@ -24,6 +24,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -60,6 +62,7 @@ class OverlayService : Service() {
     private val repeatHandler by lazy { Handler(Looper.getMainLooper()) }
 
     private var browserFolded = false
+    private var selectedTaggedFolder = false
     private var selectedDate: String? = null
     private var selectedContent: SentenceTimestampStore.FolderEntry? = null
 
@@ -73,6 +76,7 @@ class OverlayService : Service() {
     private var repeatCancelled = false
     private var activeSentenceKey: String? = null
     private var expandedSentenceKey: String? = null
+    private val recentlyPlayedSentenceKeys = mutableSetOf<String>()
     private var lastPerfSummary: String? = null
     private var currentVideoTitle: String? = null
     private val showKoreanKeys = mutableSetOf<String>()
@@ -108,6 +112,14 @@ class OverlayService : Service() {
         var startedAtMs: Long = System.currentTimeMillis(),
         var stateEnteredAtMs: Long = System.currentTimeMillis(),
         var actionAtMs: Long = 0L
+    )
+
+    private data class SentenceButtonItem(
+        val folder: SentenceTimestampStore.FolderEntry,
+        val sentence: SentenceTimestamp,
+        val prefix: String? = null,
+        val allowDelete: Boolean = true,
+        val ageColor: Int? = null
     )
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -923,20 +935,50 @@ class OverlayService : Service() {
         val container = folderButtonsContainer ?: return
         container.removeAllViews()
         val folders = sentenceStore.listDateContentFolders()
+        val taggedSentences = sentenceStore.listTaggedSentences()
         if (folders.isEmpty()) {
+            selectedTaggedFolder = false
             selectedDate = null
             selectedContent = null
             container.addView(makeHintText("No saved sentences."))
             updateFolderNavUi()
             return
         }
+        if (selectedTaggedFolder && taggedSentences.isEmpty()) selectedTaggedFolder = false
         if (selectedDate != null && folders.none { it.date == selectedDate }) selectedDate = null
         if (selectedContent != null && folders.none { it.path == selectedContent?.path }) selectedContent = null
         refreshOverlayVideoHeaderTitle()
         when {
+            selectedTaggedFolder -> {
+                if (taggedSentences.isEmpty()) {
+                    container.addView(makeHintText("No tagged sentences."))
+                } else {
+                    val items = taggedSentences.map { tagged ->
+                        val source = tagged.videoTitle
+                            ?: tagged.youtubeUrl?.let(YoutubeUrlParser::extractVideoId)
+                            ?: tagged.folder.contentId
+                        SentenceButtonItem(
+                            folder = tagged.folder,
+                            sentence = tagged.sentence,
+                            prefix = "${tagged.folder.date} | $source",
+                            allowDelete = false,
+                            ageColor = taggedAgeColor(tagged.sentence.taggedAtMs)
+                        )
+                    }
+                    addSentenceRows(container, items)
+                }
+            }
+
             selectedDate == null -> {
+                container.addView(makeOpenRow("Tagged (${taggedSentences.size})", onOpen = {
+                    selectedTaggedFolder = true
+                    selectedDate = null
+                    selectedContent = null
+                    refreshSentenceButtons()
+                }))
                 folders.map { it.date }.distinct().sortedDescending().forEach { date ->
                     container.addView(makeEntryRow(date, onOpen = {
+                        selectedTaggedFolder = false
                         selectedDate = date
                         selectedContent = null
                         refreshSentenceButtons()
@@ -974,95 +1016,177 @@ class OverlayService : Service() {
                 if (sentences.isEmpty()) {
                     container.addView(makeHintText("No sentences in folder."))
                 } else {
-                    sentences.forEach { sentence ->
-                        val sentenceKey = sentenceUiKey(sentence)
-                        val expanded = expandedSentenceKey == sentenceKey
-                        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                        val leftColor = when {
-                            translationLoadingKeys.contains(sentenceKey) -> 0xFF455A64.toInt()
-                            showKoreanKeys.contains(sentenceKey) -> 0xFF2E7D32.toInt()
-                            else -> 0xFF1565C0.toInt()
+                    addSentenceRows(
+                        container,
+                        sentences.map { sentence ->
+                            SentenceButtonItem(folder = folder, sentence = sentence)
                         }
-                        val rightColor = if (activeSentenceKey == sentenceKey && repeatSession != null) {
-                            0xFFEF6C00.toInt()
-                        } else {
-                            0xFF6A1B9A.toInt()
-                        }
-                        val displayText = if (showKoreanKeys.contains(sentenceKey)) {
-                            translatedTextByKey[sentenceKey] ?: sentence.text
-                        } else {
-                            sentence.text
-                        }
-                        val splitBtn = Button(this).apply {
-                            isAllCaps = false
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
-                            text = "[${fmtSec(sentence.startSec)}-${fmtSec(sentence.endSec)}] $displayText"
-                            setTextColor(0xFFFFFFFF.toInt())
-                            isSingleLine = false
-                            background = GradientDrawable(
-                                GradientDrawable.Orientation.LEFT_RIGHT,
-                                intArrayOf(leftColor, leftColor, rightColor, rightColor)
-                            ).apply { cornerRadius = dp(6).toFloat() }
-                            if (expanded) {
-                                maxLines = Int.MAX_VALUE
-                                ellipsize = null
-                            } else {
-                                maxLines = 2
-                                ellipsize = TextUtils.TruncateAt.END
-                            }
-                            setOnTouchListener { v, event ->
-                                if (event.action == MotionEvent.ACTION_UP) {
-                                    val splitX = v.width / 2f
-                                    if (event.x <= splitX) {
-                                        onSentenceTranslateClicked(folder, sentence)
-                                    } else {
-                                        onSentenceButtonClicked(folder, sentence)
-                                    }
-                                }
-                                true
-                            }
-                        }
-                        val delBtn = Button(this).apply {
-                            text = "Delete"
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
-                            setOnClickListener {
-                                if (expandedSentenceKey == sentenceKey) {
-                                    expandedSentenceKey = null
-                                }
-                                showKoreanKeys.remove(sentenceKey)
-                                translationLoadingKeys.remove(sentenceKey)
-                                translatedTextByKey.remove(sentenceKey)
-                                sentenceStore.deleteSentence(folder, sentence)
-                                refreshSentenceButtons()
-                            }
-                        }
-                        row.addView(splitBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                        row.addView(delBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-                        container.addView(row)
-                    }
+                    )
                 }
             }
         }
         updateFolderNavUi()
     }
 
+    private fun addSentenceRows(container: LinearLayout, items: List<SentenceButtonItem>) {
+        items.forEach { item ->
+            val sentence = item.sentence
+            val sentenceKey = sentenceUiKey(sentence)
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val sentenceFrame = makeSentenceButtonFrame(item)
+            row.addView(sentenceFrame, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            if (item.allowDelete) {
+                val delBtn = Button(this).apply {
+                    text = "Delete"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
+                    setOnClickListener {
+                        if (expandedSentenceKey == sentenceKey) {
+                            expandedSentenceKey = null
+                        }
+                        showKoreanKeys.remove(sentenceKey)
+                        translationLoadingKeys.remove(sentenceKey)
+                        translatedTextByKey.remove(sentenceKey)
+                        sentenceStore.deleteSentence(item.folder, sentence)
+                        refreshSentenceButtons()
+                    }
+                }
+                row.addView(delBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            }
+            container.addView(row)
+        }
+    }
+
+    private fun makeSentenceButtonFrame(item: SentenceButtonItem): FrameLayout {
+        val sentence = item.sentence
+        val sentenceKey = sentenceUiKey(sentence)
+        val expanded = expandedSentenceKey == sentenceKey
+        val ageColor = item.ageColor
+        val leftColor = ageColor ?: when {
+            translationLoadingKeys.contains(sentenceKey) -> 0xFF455A64.toInt()
+            showKoreanKeys.contains(sentenceKey) -> 0xFF2E7D32.toInt()
+            else -> 0xFF1565C0.toInt()
+        }
+        val middleColor = ageColor ?: if (sentence.isTagged) {
+            0xFFC62828.toInt()
+        } else {
+            0xFF37474F.toInt()
+        }
+        val rightColor = when {
+            activeSentenceKey == sentenceKey && repeatSession != null -> 0xFFEF6C00.toInt()
+            recentlyPlayedSentenceKeys.contains(sentenceKey) -> 0xFFFFA726.toInt()
+            ageColor != null -> ageColor
+            else -> 0xFF6A1B9A.toInt()
+        }
+        val displayText = if (showKoreanKeys.contains(sentenceKey)) {
+            translatedTextByKey[sentenceKey] ?: sentence.text
+        } else {
+            sentence.text
+        }
+        val prefix = item.prefix?.takeIf { it.isNotBlank() }?.let { "$it\n" }.orEmpty()
+        val splitBtn = Button(this).apply {
+            isAllCaps = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
+            text = "$prefix[${fmtSec(sentence.startSec)}-${fmtSec(sentence.endSec)}] $displayText"
+            setTextColor(if (ageColor == null || ageColor == 0xFF2E7D32.toInt()) 0xFFFFFFFF.toInt() else 0xFF102A12.toInt())
+            isSingleLine = false
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(
+                    leftColor,
+                    leftColor,
+                    blendColors(leftColor, middleColor),
+                    middleColor,
+                    middleColor,
+                    blendColors(middleColor, rightColor),
+                    rightColor,
+                    rightColor
+                )
+            ).apply { cornerRadius = dp(6).toFloat() }
+            if (expanded) {
+                maxLines = Int.MAX_VALUE
+                ellipsize = null
+            } else {
+                maxLines = if (item.prefix.isNullOrBlank()) 2 else 3
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            setOnTouchListener { v, event ->
+                if (event.action == MotionEvent.ACTION_UP) {
+                    val third = v.width / 3f
+                    when {
+                        event.x < third -> onSentenceTranslateClicked(item.folder, sentence)
+                        event.x < third * 2f -> onSentenceTagClicked(item.folder, sentence)
+                        else -> onSentenceButtonClicked(item.folder, sentence)
+                    }
+                }
+                true
+            }
+        }
+        return FrameLayout(this).apply {
+            addView(splitBtn, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+            if (sentence.isTagged) {
+                val tagBadge = ImageView(this@OverlayService).apply {
+                    setImageDrawable(
+                        GradientDrawable().apply {
+                            shape = GradientDrawable.RECTANGLE
+                            setColor(0xFFE53935.toInt())
+                            cornerRadius = dp(2).toFloat()
+                        }
+                    )
+                    contentDescription = "Tagged"
+                }
+                val badgeParams = FrameLayout.LayoutParams(dp(18), dp(10), Gravity.TOP or Gravity.START).apply {
+                    leftMargin = dp(4)
+                    topMargin = dp(3)
+                }
+                addView(tagBadge, badgeParams)
+            }
+        }
+    }
+
+    private fun taggedAgeColor(taggedAtMs: Long): Int {
+        val ageMs = (System.currentTimeMillis() - taggedAtMs).coerceAtLeast(0L)
+        return when {
+            taggedAtMs <= 0L || ageMs <= TAG_RECENT_MS -> 0xFF2E7D32.toInt()
+            ageMs <= TAG_MONTH_MS -> 0xFF8BC34A.toInt()
+            else -> 0xFFC5E1A5.toInt()
+        }
+    }
+
+    private fun blendColors(startColor: Int, endColor: Int): Int {
+        val a = (((startColor ushr 24) and 0xFF) + ((endColor ushr 24) and 0xFF)) / 2
+        val r = (((startColor ushr 16) and 0xFF) + ((endColor ushr 16) and 0xFF)) / 2
+        val g = (((startColor ushr 8) and 0xFF) + ((endColor ushr 8) and 0xFF)) / 2
+        val b = ((startColor and 0xFF) + (endColor and 0xFF)) / 2
+        return (a shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
     private fun sentenceUiKey(sentence: SentenceTimestamp): String =
         "${sentence.startSec}|${sentence.endSec}|${sentence.text}"
 
+    private fun onSentenceTagClicked(folder: SentenceTimestampStore.FolderEntry, sentence: SentenceTimestamp) {
+        val nextTagged = sentenceStore.toggleSentenceTag(folder, sentence)
+        statusTextView?.text = when (nextTagged) {
+            true -> "Sentence tagged."
+            false -> "Sentence untagged."
+            null -> "Sentence tag update failed."
+        }
+        refreshSentenceButtons()
+    }
+
     private fun onSentenceButtonClicked(folder: SentenceTimestampStore.FolderEntry, sentence: SentenceTimestamp) {
         val sentenceKey = sentenceUiKey(sentence)
-        val isEnglishExpanded = expandedSentenceKey == sentenceKey && !showKoreanKeys.contains(sentenceKey)
-        if (isEnglishExpanded) {
-            expandedSentenceKey = null
-            if (activeSentenceKey == sentenceKey && repeatSession != null) {
-                repeatCancelled = true
-                finalizeRepeat(cancelled = true)
-            }
-            refreshSentenceButtons()
+        if (activeSentenceKey == sentenceKey && repeatSession != null) {
+            repeatCancelled = true
+            recentlyPlayedSentenceKeys.clear()
+            recentlyPlayedSentenceKeys.add(sentenceKey)
+            finalizeRepeat(cancelled = true)
             return
         }
         showKoreanKeys.remove(sentenceKey)
         expandedSentenceKey = sentenceKey
+        recentlyPlayedSentenceKeys.clear()
+        recentlyPlayedSentenceKeys.add(sentenceKey)
         playSentenceRepeat(folder, sentence, repeatCount = 5)
         refreshSentenceButtons()
     }
@@ -1158,6 +1282,7 @@ class OverlayService : Service() {
             startMs = startMs,
             endMs = endMs
         )
+        refreshSentenceButtons()
         repeatHandler.removeCallbacksAndMessages(null)
         repeatHandler.post(repeatTickRunnable)
     }
@@ -1413,6 +1538,7 @@ class OverlayService : Service() {
 
     private fun navigateUp() {
         when {
+            selectedTaggedFolder -> selectedTaggedFolder = false
             selectedContent != null -> selectedContent = null
             selectedDate != null -> selectedDate = null
             else -> Unit
@@ -1421,8 +1547,9 @@ class OverlayService : Service() {
     }
 
     private fun updateFolderNavUi() {
-        btnFolderUp?.isEnabled = selectedDate != null || selectedContent != null
+        btnFolderUp?.isEnabled = selectedTaggedFolder || selectedDate != null || selectedContent != null
         btnFolderUp?.text = when {
+            selectedTaggedFolder -> "Up (Tagged)"
             selectedContent != null -> "Up (Sentence)"
             selectedDate != null -> "Up (Content)"
             else -> "Up (Date)"
@@ -1461,6 +1588,21 @@ class OverlayService : Service() {
         }
     }
 
+    private fun makeOpenRow(label: String, onOpen: () -> Unit): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val openBtn = Button(this@OverlayService).apply {
+                text = label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, BUTTON_TEXT_SP)
+                isAllCaps = false
+                isSingleLine = true
+                ellipsize = TextUtils.TruncateAt.END
+                setOnClickListener { onOpen() }
+            }
+            addView(openBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+    }
+
     private fun resetCaptureState() {
         capturedStartSec = null
         capturedEndSec = null
@@ -1477,6 +1619,7 @@ class OverlayService : Service() {
         showKoreanKeys.clear()
         translationLoadingKeys.clear()
         translatedTextByKey.clear()
+        recentlyPlayedSentenceKeys.clear()
         currentVideoTitle = null
         if (repeatSession != null) {
             repeatCancelled = true
@@ -1735,6 +1878,8 @@ class OverlayService : Service() {
         private const val KEY_STT_MODE = "stt_mode"
         private const val KEY_ON_DEVICE_PROFILE = "on_device_profile"
         private const val CLIPBOARD_CAPTURE_FRESH_MS = 2 * 60 * 1000L
+        private const val TAG_RECENT_MS = 7L * 24L * 60L * 60L * 1000L
+        private const val TAG_MONTH_MS = 30L * 24L * 60L * 60L * 1000L
         private const val STT_PAD_BEFORE_SEC_ACCURATE = 6
         private const val STT_PAD_AFTER_SEC_ACCURATE = 4
         private const val STT_PAD_BEFORE_SEC_FAST = 2

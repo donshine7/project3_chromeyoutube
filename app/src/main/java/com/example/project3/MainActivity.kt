@@ -296,23 +296,33 @@ class MainActivity : AppCompatActivity() {
             YoutubeUrlParser.normalizeUrl(urlText.text?.toString())
                 ?: ChromeCaptureStore.getObservedUrl(this)
         } else {
-            resolveYoutubeAppUrlForStart()
-        }
-        if (!PlaybackTarget.isChrome(playbackTarget) && selectedUrl.isNullOrBlank()) {
-            statusText.text = getString(R.string.status_waiting_youtube_url)
-            return
+            val clipboardUrl = YoutubeClipboardReader.readYoutubeUrl(this)
+            if (!clipboardUrl.isNullOrBlank()) {
+                saveSelectedUrl(clipboardUrl)
+                ChromeCaptureStore.saveObservedUrl(this, clipboardUrl)
+                urlText.text = clipboardUrl
+                statusText.text = "YouTube app URL captured from clipboard."
+                clipboardStatusUntilMs = System.currentTimeMillis() + 8_000L
+                clipboardUrl
+            } else {
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_SELECTED_URL, null)
+                    ?: getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_LAST_URL, null)
+            }
         }
         val apiKey = apiKeyInput.text?.toString().orEmpty().trim()
         val mode = selectedSttMode()
         val profile = selectedOnDeviceProfile()
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+        val editor = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
             .putString(KEY_API_KEY, apiKey)
-            .putString(KEY_SELECTED_URL, selectedUrl)
-            .putString(KEY_LAST_URL, selectedUrl)
             .putString(PlaybackTarget.KEY_PLAYBACK_TARGET, playbackTarget)
             .putString(KEY_STT_MODE, mode)
             .putString(KEY_ON_DEVICE_PROFILE, profile)
-            .apply()
+        if (!selectedUrl.isNullOrBlank()) {
+            editor
+                .putString(KEY_SELECTED_URL, selectedUrl)
+                .putString(KEY_LAST_URL, selectedUrl)
+        }
+        editor.apply()
 
         if (mode == STT_MODE_ON_DEVICE) {
             statusText.text = "Preparing on-device STT..."
